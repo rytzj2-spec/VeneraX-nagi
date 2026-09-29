@@ -9,6 +9,9 @@ on:
     branches:
       - main
       - nagi-offline
+    paths-ignore:
+      - '.github/workflows/apk_to_branch.yml'
+      - 'NAGISALAND.md'
 
 jobs:
   android_arm64:
