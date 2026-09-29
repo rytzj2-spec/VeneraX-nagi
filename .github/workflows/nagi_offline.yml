@@ -1,0 +1,50 @@
+# Nagisaland 离线版：只编译 Android arm64，结果放在本次运行的 Artifacts 里，不发布 Release。
+# 编译出的 APK 放进 Nagisaland安卓端/venerax/，再运行 build.py 合并（会用 Nagisaland 的密钥重新签名，
+# 所以这里用一次性的临时签名即可，不需要仓库里的签名 secrets）。
+name: Nagisaland offline build
+run-name: Nagisaland offline build (${{ github.ref_name }})
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - nagi-offline
+
+jobs:
+  android_arm64:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: rm -rf /opt/hostedtoolcache
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version-file: pubspec.yaml
+          architecture: x64
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'oracle'
+          java-version: '17'
+      - name: Throwaway signing key
+        run: |
+          keytool -genkeypair -keystore android/keystore.jks -alias nagi -keyalg RSA -keysize 2048 \
+            -validity 3650 -storepass nagioffline -keypass nagioffline -dname "CN=Nagisaland offline"
+          printf 'storeFile=keystore.jks\nstorePassword=nagioffline\nkeyAlias=nagi\nkeyPassword=nagioffline\n' > android/key.properties
+      - name: Check rust-toolchain.toml
+        run: rustup show
+      - run: flutter pub get
+      - name: Analyze changed files
+        run: flutter analyze lib/network/images.dart lib/network/app_dio_io.dart
+      - name: Image loader tests
+        run: flutter test test/image_downloader_stream_test.dart
+      - run: flutter build apk --release --target-platform android-arm64
+      - name: Rename
+        run: |
+          version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml); version="${version%%+*}"
+          mkdir -p out
+          cp build/app/outputs/apk/release/*arm64-v8a*.apk "out/VeneraX-${version}-nagi-arm64-v8a.apk"
+          ls -la out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: VeneraX-nagi-arm64
+          path: out/*.apk

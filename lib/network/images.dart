@@ -1,0 +1,475 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:venera/foundation/cache_manager.dart';
+import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/image_translation/rate_limiter.dart';
+import 'package:venera/foundation/js_engine.dart';
+import 'package:venera/foundation/consts.dart';
+import 'package:venera/utils/translations.dart';
+import 'package:venera/utils/image.dart';
+import 'package:venera/foundation/image_provider/avif_fallback.dart';
+
+import 'app_dio.dart';
+
+const _imageStreamIdleTimeout = Duration(seconds: 30);
+
+abstract class ImageDownloader {
+  /// Disk cache key for a thumbnail/cover. Callers that may need to evict a
+  /// corrupted entry must build the key through this, not by hand: a key that
+  /// differs from the one used to write makes eviction a no-op, and bad bytes
+  /// then survive forever because [loadThumbnail] serves the cache first.
+  static String thumbnailCacheKey(
+    String url,
+    String? sourceKey, [
+    String? cid,
+  ]) => "$url@$sourceKey${cid != null ? '@$cid' : ''}";
+
+  /// Disk cache key for a comic page. Same contract as [thumbnailCacheKey].
+  /// Deliberately excludes resize/translation state: those change the provider
+  /// identity, not the bytes stored on disk.
+  static String imageCacheKey(
+    String imageKey,
+    String? sourceKey,
+    String cid,
+    String eid,
+  ) => "$imageKey@$sourceKey@$cid@$eid";
+
+  static Stream<ImageDownloadProgress> loadThumbnail(
+    String url,
+    String? sourceKey, [
+    String? cid,
+  ]) async* {
+    // Apply AVIF fallback if this URL previously failed to decode.
+    url = AvifFallbackRegistry.instance.applyFallback(url);
+
+    // A locally stored cover (a collection's custom cover, or one borrowed from
+    // a downloaded member) can't go through the HTTP client: it rejects the
+    // file scheme, which failed the whole download task (#206).
+    if (url.startsWith('file://')) {
+      var file = File(url.substring(7));
+      if (!await file.exists()) {
+        throw "Cover file not found".tl;
+      }
+      var data = await file.readAsBytes();
+      yield ImageDownloadProgress(
+        currentBytes: data.length,
+        totalBytes: data.length,
+        imageBytes: data,
+      );
+      return;
+    }
+
+    final cacheKey = thumbnailCacheKey(url, sourceKey, cid);
+    final cache = await CacheManager().findCache(cacheKey);
+
+    if (cache != null) {
+      var data = await cache.readAsBytes();
+      yield ImageDownloadProgress(
+        currentBytes: data.length,
+        totalBytes: data.length,
+        imageBytes: data,
+      );
+      // Cached cover is final — same reasoning as in _loadComicImage.
+      return;
+    }
+
+    var configs = <String, dynamic>{};
+    if (sourceKey != null) {
+      var comicSource = ComicSource.find(sourceKey);
+      configs =
+          (await comicSource?.getThumbnailLoadingConfig?.call(url, cid)) ?? {};
+    }
+    configs['headers'] ??= {};
+    if (configs['headers']['user-agent'] == null &&
+        configs['headers']['User-Agent'] == null) {
+      configs['headers']['user-agent'] = webUA;
+    }
+
+    if (((configs['url'] as String?) ?? url).startsWith('cover.') &&
+        sourceKey != null) {
+      var comicSource = ComicSource.find(sourceKey);
+      if (comicSource != null) {
+        var comicInfo = await comicSource.loadComicInfo!(cid!);
+        yield* loadThumbnail(comicInfo.data.cover, sourceKey);
+        return;
+      }
+    }
+
+    var dio = AppDio(
+      BaseOptions(
+        headers: Map<String, dynamic>.from(configs['headers']),
+        method: configs['method'] ?? 'GET',
+        responseType: ResponseType.stream,
+      ),
+    );
+
+    String requestUrl = configs['url'] ?? url;
+    if (requestUrl.startsWith('//')) {
+      requestUrl = 'https:$requestUrl';
+    }
+    var req = await dio.request<ResponseBody>(
+      requestUrl,
+      data: configs['data'],
+    );
+    var stream = req.data?.stream ?? (throw "Error: Empty response body.");
+    int? expectedBytes = req.data!.contentLength;
+    if (expectedBytes == -1) {
+      expectedBytes = null;
+    }
+    // BytesBuilder keeps the received chunks as-is and joins them once; a
+    // growable List<int> stored every byte as a full integer slot (8x the
+    // memory) and was copied again on every resize and at the end.
+    final builder = BytesBuilder(copy: false);
+    await for (var data in stream.timeout(_imageStreamIdleTimeout)) {
+      builder.add(data);
+      if (expectedBytes != null) {
+        yield ImageDownloadProgress(
+          currentBytes: builder.length,
+          totalBytes: expectedBytes,
+        );
+      }
+    }
+    var buffer = builder.takeBytes();
+
+    // Matches the comic-image path below: an async hook must be awaited, and an
+    // unchecked return would cache a Future/JS object as if it were image bytes.
+    if (configs['onResponse'] is JSInvokable) {
+      dynamic result = (configs['onResponse'] as JSInvokable)([buffer]);
+      if (result is Future) {
+        result = await result;
+      }
+      if (result is Uint8List) {
+        buffer = result;
+      } else if (result is List<int>) {
+        buffer = Uint8List.fromList(result);
+      } else {
+        throw "Error: Invalid onResponse result.";
+      }
+      (configs['onResponse'] as JSInvokable).free();
+    }
+
+    await CacheManager().writeCache(cacheKey, buffer);
+    yield ImageDownloadProgress(
+      currentBytes: buffer.length,
+      totalBytes: buffer.length,
+      imageBytes: buffer,
+    );
+  }
+
+  static final _loadingImages =
+      <String, _StreamWrapper<ImageDownloadProgress>>{};
+
+  /// Cancel all loading images.
+  static void cancelAllLoadingImages() {
+    for (var wrapper in _loadingImages.values) {
+      wrapper.cancel();
+    }
+    _loadingImages.clear();
+  }
+
+  /// Load a comic image from the network or cache.
+  /// The function will prevent multiple requests for the same image.
+  static Stream<ImageDownloadProgress> loadComicImage(
+    String imageKey,
+    String? sourceKey,
+    String cid,
+    String eid, {
+    void Function(Duration? retryAfter)? onRateLimited,
+  }) {
+    final cacheKey = imageCacheKey(imageKey, sourceKey, cid, eid);
+    if (_loadingImages.containsKey(cacheKey)) {
+      return _loadingImages[cacheKey]!.stream;
+    }
+    final stream = _StreamWrapper<ImageDownloadProgress>(
+      _loadComicImage(imageKey, sourceKey, cid, eid, false, onRateLimited),
+      (wrapper) {
+        _loadingImages.remove(cacheKey);
+      },
+      isReplayable: (progress) => progress.imageBytes != null,
+    );
+    _loadingImages[cacheKey] = stream;
+    return stream.stream;
+  }
+
+  static Stream<ImageDownloadProgress> loadComicImageUnwrapped(
+    String imageKey,
+    String? sourceKey,
+    String cid,
+    String eid, {
+    bool forDownload = false,
+  }) {
+    return _loadComicImage(imageKey, sourceKey, cid, eid, forDownload);
+  }
+
+  static Stream<ImageDownloadProgress> _loadComicImage(
+    String imageKey,
+    String? sourceKey,
+    String cid,
+    String eid, [
+    bool forDownload = false,
+    void Function(Duration? retryAfter)? onRateLimited,
+  ]) async* {
+    // Apply AVIF fallback if this URL previously failed to decode.
+    imageKey = AvifFallbackRegistry.instance.applyFallback(imageKey);
+
+    final cacheKey = imageCacheKey(imageKey, sourceKey, cid, eid);
+    final cache = await CacheManager().findCache(cacheKey);
+
+    if (cache != null) {
+      var data = await cache.readAsBytes();
+      yield ImageDownloadProgress(
+        currentBytes: data.length,
+        totalBytes: data.length,
+        imageBytes: data,
+      );
+      // A cached page is final: don't fall through to the network. The reader
+      // stops listening after the first bytes, but [_StreamWrapper] keeps
+      // draining this generator, so without this return every cached page was
+      // silently re-downloaded (and re-written to disk) in the background,
+      // competing for bandwidth with the pages actually being waited on.
+      // Downloads likewise reuse the cached bytes and never re-cache — see
+      // #4 / #17. A corrupted entry is evicted by the image provider on decode
+      // failure, so the next load still self-heals from the network.
+      return;
+    }
+
+    Future<Map<String, dynamic>?> Function()? onLoadFailed;
+
+    var configs = <String, dynamic>{};
+    if (sourceKey != null) {
+      var comicSource = ComicSource.find(sourceKey);
+      configs =
+          (await comicSource!.getImageLoadingConfig?.call(
+            imageKey,
+            cid,
+            eid,
+          )) ??
+          {};
+    }
+    var retryLimit = 5;
+    var netRetries = 3;
+    while (true) {
+      try {
+        configs['headers'] ??= {'user-agent': webUA};
+
+        if (configs['onLoadFailed'] is JSInvokable) {
+          onLoadFailed = () async {
+            dynamic result = (configs['onLoadFailed'] as JSInvokable)([]);
+            if (result is Future) {
+              result = await result;
+            }
+            if (result is! Map<String, dynamic>) return null;
+            return result;
+          };
+        }
+
+        var dio = AppDio(
+          BaseOptions(
+            headers: configs['headers'],
+            method: configs['method'] ?? 'GET',
+            responseType: ResponseType.stream,
+          ),
+        );
+
+        var req = await dio.request<ResponseBody>(
+          configs['url'] ?? imageKey,
+          data: configs['data'],
+        );
+        var stream = req.data?.stream ?? (throw "Error: Empty response body.");
+        int? expectedBytes = req.data!.contentLength;
+        if (expectedBytes == -1) {
+          expectedBytes = null;
+        }
+        // See loadThumbnail: collect chunks without per-byte boxing/copying.
+        final builder = BytesBuilder(copy: false);
+        await for (var chunk in stream.timeout(_imageStreamIdleTimeout)) {
+          builder.add(chunk);
+          yield ImageDownloadProgress(
+            currentBytes: builder.length,
+            totalBytes: expectedBytes,
+          );
+        }
+        Uint8List data = builder.takeBytes();
+
+        if (configs['onResponse'] is JSInvokable) {
+          dynamic result = (configs['onResponse'] as JSInvokable)([data]);
+          if (result is Future) {
+            result = await result;
+          }
+          if (result is Uint8List) {
+            data = result;
+          } else if (result is List<int>) {
+            data = Uint8List.fromList(result);
+          } else {
+            throw "Error: Invalid onResponse result.";
+          }
+          (configs['onResponse'] as JSInvokable).free();
+        }
+
+        if (configs['modifyImage'] != null) {
+          var newData = await modifyImageWithScript(
+            data,
+            configs['modifyImage'],
+          );
+          data = newData;
+        }
+
+        if (!forDownload) {
+          await CacheManager().writeCache(cacheKey, data);
+        }
+        yield ImageDownloadProgress(
+          currentBytes: data.length,
+          totalBytes: data.length,
+          imageBytes: data,
+        );
+        return;
+      } catch (e) {
+        // The source's own recovery hook takes priority over the generic
+        // net-retry below: onLoadFailed is how a source re-signs / refreshes an
+        // expired image URL, which typically surfaces as a 403/401 (a
+        // clientError). Letting the classifier fast-fail those before the hook
+        // ran would silently break every source that relies on URL refresh, so
+        // the hook gets first crack at ANY error — the original behavior.
+        if (retryLimit >= 0 && onLoadFailed != null) {
+          var newConfig = await onLoadFailed();
+          (configs['onLoadFailed'] as JSInvokable).free();
+          onLoadFailed = null;
+          if (newConfig == null) {
+            rethrow;
+          }
+          configs = newConfig;
+          retryLimit--;
+          continue;
+        }
+        // A hook exists but its retry budget is spent: rethrow, matching the
+        // original behavior. (Falling through to net-retry here would re-free
+        // and re-wrap the hook's JSInvokable across loops.)
+        if (onLoadFailed != null) {
+          rethrow;
+        }
+        // No source-provided recovery: retry transient/rate-limited errors a
+        // bounded number of times with backoff (429/503/网络抖动/5xx). This is
+        // the only retry chance for sources without an onLoadFailed hook.
+        var status = e is DioException ? e.response?.statusCode : null;
+        var cls = status != null
+            ? classifyStatus(status)
+            : HttpErrorClass.transient;
+        if ((cls == HttpErrorClass.rateLimited ||
+                cls == HttpErrorClass.transient) &&
+            netRetries > 0) {
+          netRetries--;
+          Duration? ra;
+          if (cls == HttpErrorClass.rateLimited) {
+            ra = e is DioException
+                ? parseRetryAfter(e.response?.headers.value('retry-after'))
+                : null;
+            onRateLimited?.call(ra);
+          }
+          await Future.delayed(backoff(2 - netRetries, retryAfter: ra));
+          continue;
+        }
+        // 4xx（非 429）或重试次数耗尽：重试无益，快速失败。
+        rethrow;
+      } finally {
+        if (onLoadFailed != null) {
+          (configs['onLoadFailed'] as JSInvokable).free();
+        }
+      }
+    }
+  }
+}
+
+/// A wrapper class for a stream that
+/// allows multiple listeners to listen to the same stream.
+class _StreamWrapper<T> {
+  final Stream<T> _stream;
+
+  final List<StreamController> controllers = [];
+
+  final void Function(_StreamWrapper<T> wrapper) onClosed;
+
+  final bool Function(T data)? isReplayable;
+
+  bool isClosed = false;
+
+  bool _hasReplayableData = false;
+
+  late T _replayableData;
+
+  _StreamWrapper(this._stream, this.onClosed, {this.isReplayable}) {
+    _listen();
+  }
+
+  void _listen() async {
+    try {
+      await for (var data in _stream) {
+        if (isClosed) {
+          break;
+        }
+        if (isReplayable?.call(data) ?? false) {
+          _replayableData = data;
+          _hasReplayableData = true;
+        }
+        for (var controller in controllers) {
+          if (!controller.isClosed) {
+            controller.add(data);
+          }
+        }
+      }
+    } catch (e) {
+      for (var controller in controllers) {
+        if (!controller.isClosed) {
+          controller.addError(e);
+        }
+      }
+    } finally {
+      for (var controller in controllers) {
+        if (!controller.isClosed) {
+          controller.close();
+        }
+      }
+    }
+    controllers.clear();
+    isClosed = true;
+    onClosed(this);
+  }
+
+  Stream<T> get stream {
+    if (isClosed) {
+      throw Exception('Stream is closed');
+    }
+    var controller = StreamController<T>();
+    controllers.add(controller);
+    controller.onCancel = () {
+      controllers.remove(controller);
+    };
+    if (_hasReplayableData) {
+      controller.add(_replayableData);
+    }
+    return controller.stream;
+  }
+
+  void cancel() {
+    for (var controller in controllers) {
+      controller.close();
+    }
+    controllers.clear();
+    isClosed = true;
+  }
+}
+
+class ImageDownloadProgress {
+  final int currentBytes;
+
+  final int? totalBytes;
+
+  final Uint8List? imageBytes;
+
+  const ImageDownloadProgress({
+    required this.currentBytes,
+    required this.totalBytes,
+    this.imageBytes,
+  });
+}
