@@ -1,10 +1,20 @@
-# Nagisaland 离线版：只编译 Android arm64，结果放在本次运行的 Artifacts 里，不发布 Release。
-# 编译出的 APK 放进 Nagisaland安卓端/venerax/，再运行 build.py 合并（会用 Nagisaland 的密钥重新签名，
-# 所以这里用一次性的临时签名即可，不需要仓库里的签名 secrets）。
+# Nagisaland 离线版：只编译 Android arm64，不发布 Release。
+# 编译完把 APK 和 nagi-info.json 推到 apk 分支（本地「漫画更新面板」从那里下载）。
+# 手动运行时勾选 sync：先把 Kyosee/VeneraX 最新 Release 合进来（保留 Nagisaland 的加载优化），再编译。
+# 编出的 APK 会被 Nagisaland 的 build.py 用自己的密钥重新签名，所以这里用一次性的临时签名即可。
 name: Nagisaland offline build
-run-name: Nagisaland offline build (${{ github.ref_name }})
+run-name: Nagisaland offline build (${{ github.event_name == 'workflow_dispatch' && inputs.sync && 'sync upstream' || github.ref_name }})
 on:
   workflow_dispatch:
+    inputs:
+      sync:
+        description: "先同步上游 Kyosee/VeneraX 最新版"
+        type: boolean
+        default: true
+      force:
+        description: "上游没有新版也重新编译"
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -13,41 +23,118 @@ on:
       - '.github/workflows/apk_to_branch.yml'
       - 'NAGISALAND.md'
 
+concurrency:
+  group: nagi-build
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
 jobs:
   android_arm64:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
-      - run: rm -rf /opt/hostedtoolcache
+        with:
+          fetch-depth: 1
+
+      - name: Sync upstream
+        id: sync
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sync }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          base=$(cat .nagi-base)
+          latest=$(gh api repos/Kyosee/VeneraX/releases/latest --jq .tag_name)
+          echo "当前基于 $base，上游最新 $latest"
+          echo "upstream=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$latest" = "$base" ]; then
+            if [ "$FORCE" = "true" ]; then echo "没有新版，按要求重新编译"; echo "build=1" >> "$GITHUB_OUTPUT"
+            else echo "::notice title=已是最新::上游最新仍是 $latest，不需要更新"; echo "build=0" >> "$GITHUB_OUTPUT"; fi
+            exit 0
+          fi
+          git fetch -q --depth 1 https://github.com/Kyosee/VeneraX tag "$base" tag "$latest"
+          # Nagisaland 的改动 = 当前代码相对上游 base 的差异（工作流、记录文件除外）
+          git diff "$base" HEAD -- . ':(exclude).github' ':(exclude).nagi-base' ':(exclude)altstore-source.json' > /tmp/nagi.patch
+          echo "补丁涉及："; git diff --stat "$base" HEAD -- . ':(exclude).github' ':(exclude).nagi-base' ':(exclude)altstore-source.json'
+          git read-tree -u --reset "$latest"
+          # .github 保持本仓库的（上游的工作流不要）
+          rm -rf .github && git checkout HEAD -- .github && git add -A .github
+          if ! git apply --3way --index /tmp/nagi.patch; then
+            echo "::error title=合并冲突::上游 $latest 改动了优化涉及的代码，需要手动合并（把这段日志发给 Claude）"
+            git status --short
+            exit 1
+          fi
+          echo "$latest" > .nagi-base
+          sed -i -E "s#基于 Kyosee/VeneraX v[0-9.]+#基于 Kyosee/VeneraX ${latest}#" NAGISALAND.md
+          git add -A
+          git commit -qm "Sync upstream VeneraX ${latest} (keep Nagisaland loading optimizations)"
+          git push origin HEAD:${{ github.ref_name }}
+          echo "build=1" >> "$GITHUB_OUTPUT"
+
+      - name: Free disk
+        if: ${{ steps.sync.outputs.build != '0' }}
+        run: rm -rf /opt/hostedtoolcache
       - uses: subosito/flutter-action@v2
+        if: ${{ steps.sync.outputs.build != '0' }}
         with:
           channel: "stable"
           flutter-version-file: pubspec.yaml
           architecture: x64
       - uses: actions/setup-java@v4
+        if: ${{ steps.sync.outputs.build != '0' }}
         with:
           distribution: 'oracle'
           java-version: '17'
       - name: Throwaway signing key
+        if: ${{ steps.sync.outputs.build != '0' }}
         run: |
           keytool -genkeypair -keystore android/keystore.jks -alias nagi -keyalg RSA -keysize 2048 \
             -validity 3650 -storepass nagioffline -keypass nagioffline -dname "CN=Nagisaland offline"
           printf 'storeFile=keystore.jks\nstorePassword=nagioffline\nkeyAlias=nagi\nkeyPassword=nagioffline\n' > android/key.properties
       - name: Check rust-toolchain.toml
+        if: ${{ steps.sync.outputs.build != '0' }}
         run: rustup show
-      - run: flutter pub get
+      - if: ${{ steps.sync.outputs.build != '0' }}
+        run: flutter pub get
       - name: Analyze changed files
+        if: ${{ steps.sync.outputs.build != '0' }}
         run: flutter analyze lib/network/images.dart lib/network/app_dio_io.dart
       - name: Image loader tests
+        if: ${{ steps.sync.outputs.build != '0' }}
         run: flutter test test/image_downloader_stream_test.dart
-      - run: flutter build apk --release --target-platform android-arm64
+      - if: ${{ steps.sync.outputs.build != '0' }}
+        run: flutter build apk --release --target-platform android-arm64
       - name: Rename
+        if: ${{ steps.sync.outputs.build != '0' }}
         run: |
           version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml); version="${version%%+*}"
           mkdir -p out
           cp build/app/outputs/apk/release/*arm64-v8a*.apk "out/VeneraX-${version}-nagi-arm64-v8a.apk"
           ls -la out
       - uses: actions/upload-artifact@v7
+        if: ${{ steps.sync.outputs.build != '0' }}
         with:
           name: VeneraX-nagi-arm64
           path: out/*.apk
+      - name: Push APK to apk branch
+        if: ${{ steps.sync.outputs.build != '0' }}
+        run: |
+          set -euo pipefail
+          apk=$(ls out/*.apk | head -1); name=$(basename "$apk")
+          version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml); version="${version%%+*}"
+          mkdir pub && cp "$apk" pub/ && cd pub
+          printf '{"version":"%s","file":"%s","size":%s,"base":"%s","commit":"%s","run_id":%s,"date":"%s"}\n' \
+            "$version" "$name" "$(stat -c %s "$name")" "$(cat ../.nagi-base)" "$(git -C .. rev-parse HEAD)" \
+            "${{ github.run_id }}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > nagi-info.json
+          cat nagi-info.json
+          git init -q -b apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "APK ${version} from run ${{ github.run_id }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" apk

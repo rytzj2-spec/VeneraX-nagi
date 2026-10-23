@@ -1,4 +1,4 @@
-# 把某次编译的 APK（Artifacts）提交到 apk 分支，方便用 git 拉取（Artifacts 的下载地址在部分网络环境下打不开）。
+# （备用，手动运行）把某次编译的 APK（Artifacts）提交到 apk 分支，方便用 git 拉取（Artifacts 的下载地址在部分网络环境下打不开）。
 name: Copy APK to apk branch
 on:
   workflow_dispatch:
@@ -6,9 +6,6 @@ on:
       run_id:
         description: "Nagisaland offline build 的运行 ID"
         required: true
-  workflow_run:
-    workflows: ["Nagisaland offline build"]
-    types: [completed]
 
 permissions:
   contents: write
@@ -16,7 +13,6 @@ permissions:
 
 jobs:
   copy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4
@@ -24,7 +20,7 @@ jobs:
           name: VeneraX-nagi-arm64
           path: apk
           github-token: ${{ github.token }}
-          run-id: ${{ inputs.run_id || github.event.workflow_run.id }}
+          run-id: ${{ inputs.run_id }}
       - name: Commit to apk branch
         run: |
           set -euo pipefail
@@ -34,5 +30,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -qm "APK from run ${{ inputs.run_id || github.event.workflow_run.id }}"
+          git commit -qm "APK from run ${{ inputs.run_id }}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" apk
