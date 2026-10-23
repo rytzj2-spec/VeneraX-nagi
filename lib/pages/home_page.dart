@@ -707,7 +707,8 @@ class _HistoryState extends State<_History> {
                   scrollDirection: Axis.horizontal,
                   itemCount: history.length,
                   itemBuilder: (context, index) {
-                    final heroID = history[index].id.hashCode;
+                    final heroID =
+                        'home:history:${history[index].type.value}:${history[index].id}';
                     return SimpleComicTile(
                       comic: history[index],
                       heroID: heroID,
@@ -841,7 +842,8 @@ class _ReadLaterState extends State<_ReadLater> {
               scrollDirection: Axis.horizontal,
               itemCount: items.length,
               itemBuilder: (context, index) {
-                final heroID = items[index].id.hashCode;
+                final heroID =
+                    'home:readLater:${items[index].type.value}:${items[index].id}';
                 return SimpleComicTile(
                   comic: items[index],
                   heroID: heroID,
@@ -1060,7 +1062,8 @@ class _LocalState extends State<_Local> {
                     scrollDirection: Axis.horizontal,
                     itemCount: local.length,
                     itemBuilder: (context, index) {
-                      final heroID = local[index].id.hashCode;
+                      final heroID =
+                          'home:local:${local[index].comicType.value}:${local[index].id}';
                       return SimpleComicTile(
                         comic: local[index],
                         heroID: heroID,
@@ -1198,7 +1201,7 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
   @override
   Widget build(BuildContext context) {
     String info = [
-      "Select comic files (cbz, zip, 7z, cb7, or .venera_comics).".tl,
+      "Select comic files (cbz, zip, 7z, cb7, pdf, or .venera_comics).".tl,
       "Select a folder; single/multiple will be detected.".tl,
       "Select an EhViewer database and a download folder.".tl,
       "Scan the current local path and restore the local database.".tl,
@@ -1267,12 +1270,18 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
                     ).paddingHorizontal(8),
                   const SizedBox(height: 8),
                   Text(info).paddingHorizontal(24),
+                  if (type == 0)
+                    Text(
+                      'PDF pages are converted to images in the app local path.'
+                          .tl,
+                    ).paddingHorizontal(24),
                 ],
               ),
             ),
       actions: [
         Button.text(
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 Icons.help_outline,
@@ -1290,7 +1299,7 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
               title: "Import Comics".tl,
             );
           },
-        ).fixWidth(90).paddingRight(8),
+        ).paddingRight(8),
         Button.filled(
           isLoading: loading,
           onPressed: selectAndImport,

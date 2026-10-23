@@ -149,6 +149,7 @@ class _DataSyncSettingsState extends State<DataSyncSettings> {
               title: Text("Cache Size".tl),
               subtitle: Text(bytesToReadableString(CacheManager().currentSize)),
             ),
+            const ComicCacheDirectorySetting(),
             _CallbackSetting(
               title: "Clear Cache".tl,
               actionTitle: "Clear".tl,

@@ -2,7 +2,7 @@ name: venera
 description: "A comic app."
 publish_to: 'none'
 
-version: 2.3.4+247
+version: 2.3.6+249
 
 environment:
   sdk: '>=3.12.0 <4.0.0'
@@ -100,6 +100,9 @@ dependencies:
   flutter_onnxruntime: ^1.8.3
   unorm_dart: ^0.3.2
   ffi: ^2.2.0
+  pdfrx_engine: ^0.4.3
+  # Supplies PDFium on all native platforms, including the Apple XCFramework.
+  pdfium_flutter: ^0.2.3
 
 dev_dependencies:
   flutter_test:
