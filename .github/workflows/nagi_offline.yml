@@ -53,8 +53,8 @@ jobs:
           echo "当前基于 $base，上游最新 $latest"
           echo "upstream=$latest" >> "$GITHUB_OUTPUT"
           if [ "$latest" = "$base" ]; then
-            if [ "$FORCE" = "true" ]; then echo "没有新版，按要求重新编译"; echo "build=1" >> "$GITHUB_OUTPUT"
-            else echo "::notice title=已是最新::上游最新仍是 $latest，不需要更新"; echo "build=0" >> "$GITHUB_OUTPUT"; fi
+            if [ "$FORCE" = "true" ]; then echo "没有新版，按要求重新编译"
+            else echo "::notice title=已是最新::上游最新仍是 $latest，不需要更新"; echo "skip=true" >> "$GITHUB_OUTPUT"; fi
             exit 0
           fi
           git fetch -q --depth 1 https://github.com/Kyosee/VeneraX tag "$base" tag "$latest"
@@ -74,55 +74,54 @@ jobs:
           git add -A
           git commit -qm "Sync upstream VeneraX ${latest} (keep Nagisaland loading optimizations)"
           git push origin HEAD:${{ github.ref_name }}
-          echo "build=1" >> "$GITHUB_OUTPUT"
 
       - name: Free disk
-        if: ${{ steps.sync.outputs.build != '0' }}
+        if: ${{ steps.sync.outputs.skip != 'true' }}
         run: rm -rf /opt/hostedtoolcache
       - uses: subosito/flutter-action@v2
-        if: ${{ steps.sync.outputs.build != '0' }}
+        if: ${{ steps.sync.outputs.skip != 'true' }}
         with:
           channel: "stable"
           flutter-version-file: pubspec.yaml
           architecture: x64
       - uses: actions/setup-java@v4
-        if: ${{ steps.sync.outputs.build != '0' }}
+        if: ${{ steps.sync.outputs.skip != 'true' }}
         with:
           distribution: 'oracle'
           java-version: '17'
       - name: Throwaway signing key
-        if: ${{ steps.sync.outputs.build != '0' }}
+        if: ${{ steps.sync.outputs.skip != 'true' }}
         run: |
           keytool -genkeypair -keystore android/keystore.jks -alias nagi -keyalg RSA -keysize 2048 \
             -validity 3650 -storepass nagioffline -keypass nagioffline -dname "CN=Nagisaland offline"
           printf 'storeFile=keystore.jks\nstorePassword=nagioffline\nkeyAlias=nagi\nkeyPassword=nagioffline\n' > android/key.properties
       - name: Check rust-toolchain.toml
-        if: ${{ steps.sync.outputs.build != '0' }}
+        if: ${{ steps.sync.outputs.skip != 'true' }}
         run: rustup show
-      - if: ${{ steps.sync.outputs.build != '0' }}
+      - if: ${{ steps.sync.outputs.skip != 'true' }}
         run: flutter pub get
       - name: Analyze changed files
-        if: ${{ steps.sync.outputs.build != '0' }}
+        if: ${{ steps.sync.outputs.skip != 'true' }}
         run: flutter analyze lib/network/images.dart lib/network/app_dio_io.dart
       - name: Image loader tests
-        if: ${{ steps.sync.outputs.build != '0' }}
+        if: ${{ steps.sync.outputs.skip != 'true' }}
         run: flutter test test/image_downloader_stream_test.dart
-      - if: ${{ steps.sync.outputs.build != '0' }}
+      - if: ${{ steps.sync.outputs.skip != 'true' }}
         run: flutter build apk --release --target-platform android-arm64
       - name: Rename
-        if: ${{ steps.sync.outputs.build != '0' }}
+        if: ${{ steps.sync.outputs.skip != 'true' }}
         run: |
           version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml); version="${version%%+*}"
           mkdir -p out
           cp build/app/outputs/apk/release/*arm64-v8a*.apk "out/VeneraX-${version}-nagi-arm64-v8a.apk"
           ls -la out
       - uses: actions/upload-artifact@v7
-        if: ${{ steps.sync.outputs.build != '0' }}
+        if: ${{ steps.sync.outputs.skip != 'true' }}
         with:
           name: VeneraX-nagi-arm64
           path: out/*.apk
       - name: Push APK to apk branch
-        if: ${{ steps.sync.outputs.build != '0' }}
+        if: ${{ steps.sync.outputs.skip != 'true' }}
         run: |
           set -euo pipefail
           apk=$(ls out/*.apk | head -1); name=$(basename "$apk")
