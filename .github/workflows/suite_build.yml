@@ -1,0 +1,65 @@
+# Nagisaland suite（suite 分支）：漫画 VeneraX + 番剧 Kazumi 合在一个 Flutter 工程里，编译 Android arm64。
+# APK 放 Artifacts，并推到 apk-suite 分支。和 main 分支的 VeneraX 优化版互不影响。
+name: Nagisaland suite build
+run-name: Nagisaland suite build (${{ github.sha }})
+on:
+  workflow_dispatch:
+  push:
+    branches: [suite]
+
+concurrency:
+  group: nagi-suite
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  android_arm64:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: rm -rf /opt/hostedtoolcache
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version-file: pubspec.yaml
+          architecture: x64
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'oracle'
+          java-version: '17'
+      - name: Resolve dependencies
+        run: flutter pub get
+      - name: Throwaway signing key
+        run: |
+          keytool -genkeypair -keystore android/keystore.jks -alias nagi -keyalg RSA -keysize 2048 \
+            -validity 3650 -storepass nagioffline -keypass nagioffline -dname "CN=Nagisaland offline"
+          printf 'storeFile=keystore.jks\nstorePassword=nagioffline\nkeyAlias=nagi\nkeyPassword=nagioffline\n' > android/key.properties
+      - name: Check rust-toolchain.toml
+        run: rustup show
+      - name: Build
+        run: flutter build apk --release --target-platform android-arm64
+      - name: Rename
+        run: |
+          version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml); version="${version%%+*}"
+          kz=$(sed -n 's/^version:[[:space:]]*//p' packages/kazumi/pubspec.yaml); kz="${kz%%+*}"
+          mkdir -p out
+          cp build/app/outputs/apk/release/*arm64-v8a*.apk "out/NagiSuite-vx${version}-kz${kz}-arm64-v8a.apk"
+          ls -la out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Nagisaland-suite-arm64
+          path: out/*.apk
+      - name: Push APK to apk-suite branch
+        run: |
+          set -euo pipefail
+          cd out
+          name=$(ls *.apk | head -1)
+          printf '{"file":"%s","size":%s,"commit":"%s","run_id":%s,"date":"%s"}\n' "$name" "$(stat -c %s "$name")" \
+            "${{ github.sha }}" "${{ github.run_id }}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > nagi-info.json
+          git init -q -b apk-suite
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -qm "suite APK from run ${{ github.run_id }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" apk-suite

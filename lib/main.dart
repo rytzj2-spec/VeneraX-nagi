@@ -1,3 +1,4 @@
+import 'package:kazumi/main.dart' as kazumi_app;
 import 'dart:async';
 import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:dynamic_color/dynamic_color.dart';
@@ -396,3 +397,7 @@ class _SystemUiProvider extends StatelessWidget {
     );
   }
 }
+
+// ---- Nagisaland suite：番剧分区入口（Kazumi），由原生端以 dart entrypoint "kazumiMain" 启动 ----
+@pragma('vm:entry-point')
+Future<void> kazumiMain() => kazumi_app.main();
