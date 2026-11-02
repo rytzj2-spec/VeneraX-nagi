@@ -400,4 +400,6 @@ class _SystemUiProvider extends StatelessWidget {
 
 // ---- Nagisaland suite：番剧分区入口（Kazumi），由原生端以 dart entrypoint "kazumiMain" 启动 ----
 @pragma('vm:entry-point')
-Future<void> kazumiMain() => kazumi_app.main();
+void kazumiMain() {
+  kazumi_app.main();
+}

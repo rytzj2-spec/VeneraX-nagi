@@ -288,7 +288,7 @@ class _ImageViewerState extends State<ImageViewer> {
           loadingBuilder: (context, event) => const Center(
             child: LoadingIndicator(),
           ),
-          errorBuilder: (context, error, stackTrace) => _buildErrorWidget(),
+          errorBuilder: (context, error, stackTrace, retry) => _buildErrorWidget(),
         ),
       ),
     );
@@ -327,7 +327,7 @@ class _ImageViewerState extends State<ImageViewer> {
               heroAttributes: index == _currentIndex
                   ? PhotoViewHeroAttributes(tag: _heroTagForIndex(index))
                   : null,
-              errorBuilder: (context, error, stackTrace) => _buildErrorWidget(),
+              errorBuilder: (context, error, stackTrace, retry) => _buildErrorWidget(),
             );
           },
         ),

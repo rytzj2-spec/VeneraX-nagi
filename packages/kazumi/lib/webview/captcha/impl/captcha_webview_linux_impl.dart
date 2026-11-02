@@ -1,3 +1,4 @@
+// Nagisaland suite: adapted to venera-app/flutter_desktop_webview (no headless/userScripts; Linux desktop only)
 import 'dart:async';
 import 'dart:convert';
 
@@ -19,7 +20,6 @@ class CaptchaWebviewLinuxImpl extends CaptchaWebviewController<Webview> {
     final proxyConfig = _getProxyConfiguration();
     webviewController ??= await WebviewWindow.create(
       configuration: CreateConfiguration(
-        headless: true,
         proxy: proxyConfig,
       ),
     );
@@ -28,7 +28,7 @@ class CaptchaWebviewLinuxImpl extends CaptchaWebviewController<Webview> {
     initEventController.add(true);
   }
 
-  ProxyConfiguration? _getProxyConfiguration() {
+  String? _getProxyConfiguration() {
     final bool proxyEnable = GStorage.getSetting(SettingsKeys.proxyEnable);
     if (!proxyEnable) return null;
 
@@ -38,7 +38,7 @@ class CaptchaWebviewLinuxImpl extends CaptchaWebviewController<Webview> {
 
     final (host, port) = parsed;
     KazumiLogger().i('[Captcha WebView] 代理设置成功 $host:$port');
-    return ProxyConfiguration(host: host, port: port);
+    return '$host:$port';
   }
 
   void _initMessageBridge() {

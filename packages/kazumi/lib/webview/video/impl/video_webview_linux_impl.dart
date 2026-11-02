@@ -1,3 +1,4 @@
+// Nagisaland suite: adapted to venera-app/flutter_desktop_webview (no headless/userScripts; Linux desktop only)
 import 'dart:async';
 import 'package:kazumi/webview/video/video_webview_controller.dart';
 import 'package:kazumi/services/storage/storage.dart';
@@ -14,29 +15,14 @@ class VideoWebviewLinuxImpl extends VideoWebviewController<Webview> {
     final proxyConfig = _getProxyConfiguration();
     webviewController ??= await WebviewWindow.create(
       configuration: CreateConfiguration(
-        headless: true,
         proxy: proxyConfig,
-        userScripts: const [
-          UserScript(
-              source: blobScript,
-              injectionTime: UserScriptInjectionTime.documentStart,
-              forAllFrames: true),
-          UserScript(
-              source: iframeScript,
-              injectionTime: UserScriptInjectionTime.documentEnd,
-              forAllFrames: true),
-          UserScript(
-              source: videoScript,
-              injectionTime: UserScriptInjectionTime.documentEnd,
-              forAllFrames: true)
-        ],
       ),
     );
     bridgeInited = false;
     initEventController.add(true);
   }
 
-  ProxyConfiguration? _getProxyConfiguration() {
+  String? _getProxyConfiguration() {
     final bool proxyEnable = GStorage.getSetting(SettingsKeys.proxyEnable);
     if (!proxyEnable) {
       return null;
@@ -50,7 +36,7 @@ class VideoWebviewLinuxImpl extends VideoWebviewController<Webview> {
 
     final (host, port) = parsed;
     KazumiLogger().i('WebView: 代理设置成功 $host:$port');
-    return ProxyConfiguration(host: host, port: port);
+    return '$host:$port';
   }
 
   Future<void> initBridge(bool useLegacyParser) async {
