@@ -100,6 +100,12 @@
             android:exported="true">
 
         </activity>
+        <!-- Nagisaland：Cloudflare 人机验证 -->
+        <activity
+            android:theme="@style/Theme.Hanime1"
+            android:name=".suite.CfVerifyActivity"
+            android:configChanges="screenSize|orientation"
+            android:exported="false" />
         <activity
             android:theme="@style/Theme.Hanime1"
             android:name=".ui.activity.LoginActivity"

@@ -24,8 +24,10 @@ class HCookieJar : CookieJar {
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        return cookieMap[url.host]
+        val base = cookieMap[url.host]
             ?: Preferences.loginCookieStateFlow.value.toLoginCookieList(url.host)
+        // Nagisaland：加上「去验证」拿到的 Cloudflare Cookie（cf_clearance）
+        return com.yenaly.han1meviewer.suite.NagiHAuth.withExtraCookies(url, base)
     }
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {

@@ -90,6 +90,29 @@ class MainActivity : YenalyActivity<ActivityMainBinding>(), DrawerListener, Tool
         resources.getBoolean(R.bool.isTablet)
     }
 
+    // Nagisaland：Cloudflare 验证完成后刷新主页
+    private var cfDialogShowing = false
+    private val cfVerifyLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                showShortToast("验证通过，正在刷新")
+                viewModel.getHomePage()
+            }
+        }
+
+    private fun showCfVerifyDialog() {
+        if (cfDialogShowing || isFinishing) return
+        cfDialogShowing = true
+        showAlertDialog(dismissListener = { cfDialogShowing = false }) {
+            setTitle("hanime1 开启了人机验证")
+            setMessage("自动重试也没过去。点「去验证」在 App 里打开网站过一次验证（出现勾选框就点一下），过了会自动回来并刷新。")
+            setPositiveButton("去验证") { _, _ ->
+                cfVerifyLauncher.launch(Intent(this@MainActivity, com.yenaly.han1meviewer.suite.CfVerifyActivity::class.java))
+            }
+            setNegativeButton(R.string.cancel, null)
+        }
+    }
+
     // 登錄完了後讓activity刷新主頁
     private val loginDataLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -291,9 +314,11 @@ class MainActivity : YenalyActivity<ActivityMainBinding>(), DrawerListener, Tool
             repeatOnLifecycle(Lifecycle.State.CREATED) {
                 viewModel.homePageFlow.collect { state ->
                     if (state is WebsiteState.Error) {
-                        if (state.throwable is CloudFlareBlockedException) {
-                            // TODO: 被屏蔽时的处理
-                            Log.e("error", "被屏蔽时的处理")
+                        if (state.throwable is CloudFlareBlockedException &&
+                            state.throwable !is com.yenaly.han1meviewer.logic.exception.IPBlockedException
+                        ) {
+                            // Nagisaland：静默重试都失败了 → 提示去 App 内 WebView 过验证
+                            showCfVerifyDialog()
                         }
                     }
                 }

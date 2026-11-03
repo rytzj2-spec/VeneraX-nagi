@@ -27,6 +27,7 @@ import com.yenaly.han1meviewer.databinding.ActivityLoginBinding
 import com.yenaly.han1meviewer.logic.NetworkRepo
 import com.yenaly.han1meviewer.logic.state.WebsiteState
 import com.yenaly.han1meviewer.login
+import com.yenaly.han1meviewer.util.showAlertDialog
 import com.yenaly.han1meviewer.util.createAlertDialog
 import com.yenaly.han1meviewer.util.showWithBlurEffect
 import com.yenaly.yenaly_libs.base.frame.FrameActivity
@@ -37,6 +38,9 @@ import kotlinx.coroutines.launch
 class LoginActivity : FrameActivity() {
 
     companion object {
+        const val HIDE_GOOGLE_JS = "(function(){document.querySelectorAll('a,button,div[role=button]').forEach(function(e){" +
+            "var s=((e.href||'')+' '+(e.getAttribute('onclick')||'')+' '+(e.textContent||'')).toLowerCase();" +
+            "if(s.indexOf('google')>=0){e.style.display='none';}});})()"
         const val TAG = "LoginActivity"
 
         private const val HL = """<span style="color: #FF0000;"><b>H</b></span><b>a1</b>ogin"""
@@ -67,6 +71,11 @@ class LoginActivity : FrameActivity() {
             it.setHomeActionContentDescription(R.string.back)
         }
         initWebView()
+        // Nagisaland：粘贴 Cookie 登录（Google 账号在 WebView 里登录不了）
+        binding.toolbar.menu.add("Cookie 登录").apply {
+            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_ALWAYS)
+            setOnMenuItemClickListener { showCookieLoginDialog(); true }
+        }
         binding.srlLogin.setOnRefreshListener {
             binding.wvLogin.loadUrl(HANIME_LOGIN_URL)
         }
@@ -97,17 +106,23 @@ class LoginActivity : FrameActivity() {
             // #issue-17: 谷歌登录需要开启JavaScript，但是谷歌拒絕這種登錄方式，遂放棄
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.userAgentString = USER_AGENT
+            settings.userAgentString = com.yenaly.han1meviewer.suite.NagiHAuth.userAgent ?: USER_AGENT
 
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
                     binding.srlLogin.finishRefresh()
+                    // Nagisaland：Google 禁止在 WebView 里登录（「此浏览器或应用可能不安全」），把 Google 登录按钮藏起来
+                    view.evaluateJavascript(HIDE_GOOGLE_JS, null)
                 }
 
                 override fun shouldOverrideUrlLoading(
                     view: WebView,
                     request: WebResourceRequest,
                 ): Boolean {
+                    if (request.url.host?.contains("accounts.google.") == true) {
+                        showGoogleHint()
+                        return true
+                    }
                     val isSameUrl = request.url.toString() == HANIME_MAIN_BASE_URL ||
                             request.url.toString() == HANIME_ALTER_BASE_URL
                     if (request.isRedirect && isSameUrl) {
@@ -136,6 +151,74 @@ class LoginActivity : FrameActivity() {
                     }
                 }
             }
+        }
+    }
+
+    // ---------------------------------------------------------------- Nagisaland
+
+    private fun showGoogleHint() {
+        showAlertDialog {
+            setTitle("不能用 Google 登录")
+            setMessage("Google 禁止在 App 内的网页里登录（会提示「此浏览器或应用可能不安全」），这个绕不过。\n\n" +
+                "请用邮箱 + 密码登录；用 Google 注册的账号，先在手机浏览器里打开 hanime1，用「忘记密码」给账号设一个密码。\n\n" +
+                "或者：在浏览器里登录 hanime1 后，用右上角「Cookie 登录」把浏览器的 Cookie 粘贴进来。")
+            setPositiveButton("知道了", null)
+        }
+    }
+
+    /** 粘贴浏览器里 hanime1 的 Cookie（和浏览器的 User-Agent），写进 H 的登录 Cookie；和 Cloudflare 验证共用同一套 UA 设置 */
+    private fun showCookieLoginDialog() {
+        val dp = resources.displayMetrics.density
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding((20 * dp).toInt(), (8 * dp).toInt(), (20 * dp).toInt(), 0)
+        }
+        val etCookie = com.google.android.material.textfield.TextInputEditText(this).apply {
+            hint = "Cookie（整段粘贴，例：XSRF-TOKEN=…; hanime1_session=…）"
+            minLines = 3
+        }
+        val etUa = com.google.android.material.textfield.TextInputEditText(this).apply {
+            hint = "浏览器的 User-Agent（必填，要和登录用的浏览器一样）"
+            setText(com.yenaly.han1meviewer.suite.NagiHAuth.userAgent.orEmpty())
+            minLines = 2
+        }
+        val tip = android.widget.TextView(this).apply {
+            text = "怎么拿：电脑浏览器登录 hanime1 → F12 → 网络 → 随便点一个 hanime1 的请求 → 请求标头里的 Cookie 和 User-Agent 整段复制。" +
+                "手机上可以用 Kiwi 等支持开发者工具的浏览器。Cloudflare 的 cf_clearance 也和 UA 绑定，所以 UA 必须一致。"
+            textSize = 12f
+            setPadding(0, (8 * dp).toInt(), 0, 0)
+        }
+        box.addView(etCookie)
+        box.addView(etUa)
+        box.addView(tip)
+        showAlertDialog {
+            setTitle("粘贴 Cookie 登录")
+            setView(box)
+            setPositiveButton(R.string.login) { _, _ ->
+                val cookie = etCookie.text?.toString().orEmpty().trim().removePrefix("Cookie:").trim()
+                val ua = etUa.text?.toString().orEmpty().trim().removePrefix("User-Agent:").trim()
+                if (!cookie.contains('=')) {
+                    showShortToast("Cookie 格式不对")
+                    return@setPositiveButton
+                }
+                if (ua.isEmpty()) {
+                    showShortToast("请填浏览器的 User-Agent")
+                    return@setPositiveButton
+                }
+                com.yenaly.han1meviewer.suite.NagiHAuth.userAgent = ua
+                if (com.yenaly.han1meviewer.suite.NagiHAuth.hasCfClearance(cookie)) {
+                    com.yenaly.han1meviewer.suite.NagiHAuth.saveCfCookies(cookie)
+                }
+                login(cookie)
+                setResult(RESULT_OK)
+                finish()
+            }
+            setNeutralButton("恢复默认 UA") { _, _ ->
+                com.yenaly.han1meviewer.suite.NagiHAuth.userAgent = null
+                com.yenaly.han1meviewer.suite.NagiHAuth.extraCookie = ""
+                showShortToast("已恢复 H 默认的 User-Agent，并清掉验证 Cookie")
+            }
+            setNegativeButton(R.string.cancel, null)
         }
     }
 

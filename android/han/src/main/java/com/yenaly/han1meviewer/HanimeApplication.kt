@@ -43,6 +43,7 @@ class HanimeApplication : YenalyApplication() {
     override fun onCreate() {
         super.onCreate()
         com.yenaly.han1meviewer.suite.SuiteCrashLog.install(this)
+        com.yenaly.han1meviewer.suite.NagiHAuth.init(this)
         // Nagisaland 统一主题：不再套壁纸动态取色（会盖掉 themes.xml 里的 Nagisaland 配色）。
         // 想恢复就把 NAGI_UNIFIED_THEME 改成 false（只作用于 H 分区自己的界面）
         if (!NAGI_UNIFIED_THEME) DynamicColors.applyToActivitiesIfAvailable(
