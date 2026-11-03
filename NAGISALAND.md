@@ -156,6 +156,15 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
   前后台、内存；ANR 附 trace 原文；原生崩溃附 tombstone 原文 `.pb` + 从里面抽出的可读字符串），perf.txt 里也记一行。
   按时间戳只记新的；用户强停 / App 更新 / 正常退出不记。第一次运行会把系统还留着的历史（最多 16 条，含 v0.19.1 的崩溃）都写出来。
 
+## 2026-11-04 v0.19.3（versionCode 53）
+- **闪退的真正原因**（b03dc2b，本地修的）：真机 12 份原生崩溃全是 `platform_view_android_jni_impl.cc` 的 `CheckException`。
+  `SuitePerf.onResumed` 在 `FlutterUiDisplayListener.onFlutterUiDisplayed` 回调里直接 `removeOnFirstFrameRenderedListener`，
+  FlutterView 正在遍历监听器集合 → `ConcurrentModificationException` 从 JNI 回调里抛出 → 引擎 abort。改成 post 到下一轮再移除，并全部 try/catch。
+  **铁律**：引擎经 JNI 调用的 Java/Kotlin 回调（FlutterUiDisplayListener、MethodChannel handler、PlatformView 等）里不要改正在遍历的集合，也不要让异常抛出去。
+  上面 v0.19.2 对引擎组的判断是错的：修好后引擎组、预热、Impeller 全开真机也不闪退。默认值仍是关（开关在「流畅度设置」）。
+- 「流畅度设置」「编辑底栏」的开关在主界面几乎看不见：面板是原生 Dialog，系统 `Switch` 跟界面主题走，主界面是 `Theme.Black`（很老的系统主题），
+  只剩一个淡点；H 是 Material 主题所以正常。`SuitePanels.nagiSwitch` 自己画轨道和滑块（开 = 粉色轨道 + 白滑块，关 = 深灰轨道 + 灰滑块），各处一致。
+
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后
 `flutter build apk --release --target-platform android-arm64 --dart-define-from-file=dart_defines.txt`（没有 dart_defines.txt 就去掉这个参数）。

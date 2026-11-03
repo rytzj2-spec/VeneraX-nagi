@@ -9,6 +9,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.StateListDrawable
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -37,6 +39,34 @@ object SuitePanels {
     private const val PINK = 0xFFE879A9.toInt()
 
     private fun Context.dp(v: Float) = (v * resources.displayMetrics.density).toInt()
+
+    /**
+     * 开关：自己画滑块和轨道，不跟界面主题走。主界面是 Theme.Black（很老的系统主题），系统 Switch 在那里只剩一个淡淡的小点；
+     * H 是 Material 主题所以正常。现在各处都是同一个样子：开 = 粉色轨道 + 白色滑块，关 = 深灰轨道 + 灰色滑块。
+     */
+    @Suppress("DEPRECATION")
+    private fun nagiSwitch(a: Context): Switch {
+        val checked = intArrayOf(android.R.attr.state_checked)
+        fun track(color: Int) = GradientDrawable().apply {
+            setColor(color); cornerRadius = a.dp(14f).toFloat(); setSize(a.dp(50f), a.dp(28f))
+        }
+        fun thumb(color: Int) = InsetDrawable(GradientDrawable().apply {
+            shape = GradientDrawable.OVAL; setColor(color); setSize(a.dp(22f), a.dp(22f))
+        }, a.dp(3f))
+        return Switch(a).apply {
+            trackDrawable = StateListDrawable().apply {
+                addState(checked, track(PINK))
+                addState(intArrayOf(), track(0xFF3F3F46.toInt()))
+            }
+            thumbDrawable = StateListDrawable().apply {
+                addState(checked, thumb(Color.WHITE))
+                addState(intArrayOf(), thumb(0xFFA1A1AA.toInt()))
+            }
+            showText = false
+            switchMinWidth = a.dp(50f)
+            minimumHeight = a.dp(40f)
+        }
+    }
 
     private fun bottomDialog(a: Activity, content: View): Dialog {
         val d = Dialog(a)
@@ -167,7 +197,7 @@ object SuitePanels {
                 line.addView(TextView(a).apply { setTextColor(TEXT); textSize = 15f; setPadding(a.dp(12f), 0, 0, 0); tag = "label" },
                     LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 @Suppress("DEPRECATION")
-                line.addView(Switch(a).apply { tag = "switch"; text = "底栏 "; setTextColor(SUB) })
+                line.addView(nagiSwitch(a).apply { tag = "switch"; text = "底栏 "; setTextColor(SUB); switchPadding = a.dp(6f) })
                 return object : RecyclerView.ViewHolder(line) {}
             }
 
@@ -246,7 +276,7 @@ object SuitePanels {
             texts.addView(TextView(a).apply { text = sub; setTextColor(SUB); textSize = 12f })
             box.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             @Suppress("DEPRECATION")
-            box.addView(Switch(a).apply { isChecked = value; setOnCheckedChangeListener { _, on -> onChange(on) } })
+            box.addView(nagiSwitch(a).apply { isChecked = value; setOnCheckedChangeListener { _, on -> onChange(on) } })
             root.addView(box)
         }
         sw("Impeller 渲染（实验）", "漫画 / 番剧 / 影视的 Flutter 用 Impeller 代替 Skia。可能更流畅，番剧视频可能黑屏。完全退出 App 再打开才生效",
