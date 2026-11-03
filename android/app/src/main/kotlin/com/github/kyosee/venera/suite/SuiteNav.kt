@@ -74,10 +74,14 @@ object SuiteNav {
         else -> if (a.javaClass.name == NAGI_MAIN) "nagi" else null
     }
 
-    private fun engineState(to: String): String = when (to) {
+    private fun engineState(ctx: android.content.Context, to: String): String = when (to) {
         "anime" -> if (FlutterEngineCache.getInstance().get(KazumiEngine.ID).let { it != null && !KazumiEngine.isPlaceholder(it) }) "已预热" else "要新建"
         "video" -> if (FlutterEngineCache.getInstance().get("nagi_video_engine") != null) "已预热" else "要新建"
-        "comic" -> if (FlutterEngineCache.getInstance().get(SuiteEngines.COMIC_ID) != null) "常驻" else "要新建"
+        "comic" -> when {
+            FlutterEngineCache.getInstance().get(SuiteEngines.COMIC_ID) != null -> "常驻"
+            SuiteEngines.groupEnabled(ctx) -> "要新建"
+            else -> "随漫画界面"
+        }
         else -> "-"
     }
 
@@ -97,7 +101,7 @@ object SuiteNav {
             if (to in NAGI_TABS) applyPendingTab(from)
             return
         }
-        SuitePerf.start(keyOf(from)?.let { if (it == "nagi") "主界面" else it } ?: from.javaClass.simpleName, to, engineState(to))
+        SuitePerf.start(keyOf(from)?.let { if (it == "nagi") "主界面" else it } ?: from.javaClass.simpleName, to, engineState(from, to))
         val i = Intent(from, cls).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION)
         from.startActivity(i)
         @Suppress("DEPRECATION")

@@ -251,8 +251,10 @@ object SuitePanels {
         }
         sw("Impeller 渲染（实验）", "漫画 / 番剧 / 影视的 Flutter 用 Impeller 代替 Skia。可能更流畅，番剧视频可能黑屏。完全退出 App 再打开才生效",
             SuiteEngines.impellerEnabled(a)) { SuiteEngines.setImpeller(a, it) }
-        sw("后台预热", "打开 App 后空闲时先把番剧、影视准备好，切过去不卡（多占一些内存）",
+        sw("后台预热（实验）", "打开 App 后空闲时先把番剧、影视准备好，切过去不卡（多占一些内存）。默认关",
             SuiteEngines.prewarmEnabled(a)) { SuiteEngines.setPrewarm(a, it) }
+        sw("共享引擎组（实验）", "漫画 / 番剧 / 影视共用一个 Flutter 引擎组，新建更快更省内存。v0.19.1 默认开，真机会闪退，现在默认关。完全退出 App 再打开才生效",
+            SuiteEngines.groupSetting(a)) { SuiteEngines.setGroup(a, it) }
         sw("记录切换耗时", "每次切分区从点击到画面出来的毫秒数，写到 内部存储/Nagisaland/debug/perf.txt",
             SuitePerf.enabled(a)) { SuitePerf.setEnabled(a, it) }
         lateinit var dialog: Dialog

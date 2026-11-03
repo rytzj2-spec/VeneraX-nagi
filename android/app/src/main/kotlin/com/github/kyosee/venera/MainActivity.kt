@@ -72,11 +72,10 @@ class MainActivity : FlutterFragmentActivity() {
         handleNotificationRoute(intent)
     }
 
-    // Nagisaland：漫画的引擎也从共享的 FlutterEngineGroup 建，常驻（切走再回来不重建）
+    // Nagisaland：只有在「流畅度设置」打开共享引擎组时，漫画引擎才由 SuiteEngines 提供并常驻（由宿主提供的引擎不随界面销毁）；
+    // 默认返回 null = 和 v0.19.0 一样由漫画界面自己建引擎
     override fun provideFlutterEngine(context: android.content.Context): io.flutter.embedding.engine.FlutterEngine? =
-        io.github.kyosee.venera.suite.SuiteEngines.comic(context)
-
-    // 由宿主提供的引擎不会随界面销毁（FlutterFragment 的 isFlutterEngineFromHost）
+        io.github.kyosee.venera.suite.SuiteEngines.comicOrNull(context)
 
     // Nagisaland suite：底部常驻分区栏；根页面返回时回到游戏库而不是关掉漫画
     override fun onPostCreate(savedInstanceState: Bundle?) {

@@ -26,8 +26,13 @@ import java.util.Locale
 import java.util.concurrent.Executors
 
 /**
- * 漫画 / 番剧 / 影视三个 Flutter 引擎都从同一个 [FlutterEngineGroup] 建（共享 GPU 上下文、字体、已加载的代码，新建更快、更省内存）。
- * 番剧、影视在主界面空闲时后台预热，之后常驻；漫画在第一次打开时建（它启动时要初始化很多东西，不在后台抢）。
+ * 漫画 / 番剧 / 影视三个 Flutter 引擎的创建。
+ *
+ * v0.19.2：v0.19.1 改成从同一个 [FlutterEngineGroup] 建以后真机频繁闪退（原生层，SuiteCrashLog 抓不到；perf.txt 里
+ * 引擎在同一次切换后反复「新建」= 进程崩了重启）。引擎组里后建的引擎是从第一个 spawn 出来的，和它共用 UI / 渲染 / IO
+ * 线程和 GPU 资源上下文，多个引擎同时活着时最可疑。所以默认回到 v0.19.0 的方式：每个分区一个独立的 FlutterEngine，
+ * 漫画引擎随漫画界面建、随界面销毁。引擎组和后台预热都改成「流畅度设置」里的实验开关，默认关；出任何异常都退回普通建引擎，
+ * 异常写进 内部存储/Nagisaland/debug/perf.txt。
  *
  * Impeller：以前在 manifest 里写死关闭（Kazumi 的 media_kit 按原项目用 Skia）。现在由这里在进程一启动就决定，
  * 设置里可以打开试试（重启 App 生效）。
@@ -37,12 +42,27 @@ object SuiteEngines {
     private const val PREFS = "suite_perf"
     const val COMIC_ID = "nagi_comic_engine"
 
+    // v0.19.2 换了键名：v0.19.1 时默认开的设置不带过来，统一从「关」开始
+    private const val KEY_GROUP = "engine_group_v2"
+    private const val KEY_PREWARM = "prewarm_v2"
+
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun impellerEnabled(ctx: Context) = prefs(ctx).getBoolean("impeller", false)
     fun setImpeller(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("impeller", on).apply()
-    fun prewarmEnabled(ctx: Context) = prefs(ctx).getBoolean("prewarm", true)
-    fun setPrewarm(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("prewarm", on).apply()
+    fun prewarmEnabled(ctx: Context) = prefs(ctx).getBoolean(KEY_PREWARM, false)
+    fun setPrewarm(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean(KEY_PREWARM, on).apply()
+
+    /** 设置里的「共享引擎组」开关（改了要完全退出再开才生效） */
+    fun groupSetting(ctx: Context) = prefs(ctx).getBoolean(KEY_GROUP, false)
+    fun setGroup(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean(KEY_GROUP, on).apply()
+
+    /** 本进程实际用不用引擎组：第一次问的时候定下来，进程内不再变（不能一半引擎在组里、一半不在） */
+    @Volatile private var groupMode: Boolean? = null
+    @JvmStatic
+    fun groupEnabled(ctx: Context): Boolean = groupMode ?: synchronized(this) {
+        groupMode ?: (try { groupSetting(ctx) } catch (_: Throwable) { false }).also { groupMode = it }
+    }
 
     @Volatile private var loaderReady = false
     private var group: FlutterEngineGroup? = null
@@ -61,65 +81,118 @@ object SuiteEngines {
         Log.i(TAG, "Flutter loader ready, impeller=$impeller")
     }
 
-    @Synchronized
-    private fun group(ctx: Context): FlutterEngineGroup {
-        initLoader(ctx)
-        return group ?: FlutterEngineGroup(ctx.applicationContext).also { group = it }
+    /** 和 [initLoader] 一样，但出错只记日志（之后 Flutter 自己还会再初始化一次） */
+    @JvmStatic
+    fun initLoaderSafe(ctx: Context) {
+        try { initLoader(ctx) } catch (e: Throwable) { SuitePerf.error(ctx, "初始化 Flutter（Impeller 开关）", e) }
     }
 
-    /** 从引擎组建一个引擎并跑指定的 dart 入口（null = 默认 main，即漫画） */
+    @Synchronized
+    private fun group(ctx: Context): FlutterEngineGroup =
+        group ?: FlutterEngineGroup(ctx.applicationContext).also { group = it }
+
+    /**
+     * 建一个引擎并跑指定的 dart 入口（null = 默认 main，即漫画）。必须在主线程调用。
+     * 默认 = v0.19.0 的独立引擎；打开「共享引擎组」时先试引擎组，失败退回独立引擎。
+     */
     @JvmStatic
     fun create(ctx: Context, entrypoint: String?, label: String): FlutterEngine {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            SuitePerf.error(ctx, "$label 引擎不在主线程创建（${Thread.currentThread().name}）", null)
+        }
         val t0 = SystemClock.elapsedRealtime()
-        val loader = FlutterInjector.instance().flutterLoader()
-        val g = group(ctx)
-        val ep = if (entrypoint == null) DartExecutor.DartEntrypoint.createDefault()
-        else DartExecutor.DartEntrypoint(loader.findAppBundlePath(), entrypoint)
-        val engine = g.createAndRunEngine(
-            FlutterEngineGroup.Options(ctx.applicationContext).setDartEntrypoint(ep).setInitialRoute("/")
-        )
+        initLoaderSafe(ctx)
+        if (groupEnabled(ctx)) {
+            try {
+                val engine = createFromGroup(ctx, entrypoint)
+                SuitePerf.log(ctx, "新建 $label 引擎（引擎组）${SystemClock.elapsedRealtime() - t0}ms")
+                return engine
+            } catch (e: Throwable) {
+                SuitePerf.error(ctx, "引擎组建 $label 引擎失败，改用普通方式", e)
+            }
+        }
+        val engine = createStandalone(ctx, entrypoint)
         SuitePerf.log(ctx, "新建 $label 引擎 ${SystemClock.elapsedRealtime() - t0}ms")
         return engine
     }
 
-    /** 漫画（VeneraX）的引擎：常驻缓存 */
+    /** v0.19.0 的建法：独立的 FlutterEngine */
+    private fun createStandalone(ctx: Context, entrypoint: String?): FlutterEngine {
+        val app = ctx.applicationContext
+        val loader = FlutterInjector.instance().flutterLoader()
+        loader.startInitialization(app)
+        loader.ensureInitializationComplete(app, null)
+        val engine = FlutterEngine(app)
+        engine.navigationChannel.setInitialRoute("/")
+        val ep = if (entrypoint == null) DartExecutor.DartEntrypoint.createDefault()
+        else DartExecutor.DartEntrypoint(loader.findAppBundlePath(), entrypoint)
+        engine.dartExecutor.executeDartEntrypoint(ep)
+        return engine
+    }
+
+    private fun createFromGroup(ctx: Context, entrypoint: String?): FlutterEngine {
+        val loader = FlutterInjector.instance().flutterLoader()
+        val g = group(ctx)
+        val ep = if (entrypoint == null) DartExecutor.DartEntrypoint.createDefault()
+        else DartExecutor.DartEntrypoint(loader.findAppBundlePath(), entrypoint)
+        return g.createAndRunEngine(
+            FlutterEngineGroup.Options(ctx.applicationContext).setDartEntrypoint(ep).setInitialRoute("/")
+        )
+    }
+
+    /**
+     * 漫画（VeneraX）界面用的引擎：只有开了「共享引擎组」才由这里提供并常驻；
+     * 默认返回 null = 和 v0.19.0 一样由漫画界面自己建、自己销毁。
+     */
     @JvmStatic
     @Synchronized
-    fun comic(ctx: Context): FlutterEngine {
-        val cache = FlutterEngineCache.getInstance()
-        cache.get(COMIC_ID)?.let { return it }
-        return create(ctx, null, "漫画").also { cache.put(COMIC_ID, it) }
+    fun comicOrNull(ctx: Context): FlutterEngine? {
+        if (!groupEnabled(ctx)) return null
+        return try {
+            val cache = FlutterEngineCache.getInstance()
+            cache.get(COMIC_ID) ?: create(ctx, null, "漫画").also { cache.put(COMIC_ID, it) }
+        } catch (e: Throwable) {
+            SuitePerf.error(ctx, "漫画引擎（引擎组）失败，交给漫画界面自己建", e)
+            null
+        }
     }
 
     private var prewarmed = false
 
-    /** 主界面起来后，空闲时依次预热番剧、影视引擎（每个之间留一点间隔，不卡主界面） */
+    /** 主界面起来后，空闲时依次预热番剧、影视引擎（每个之间留一点间隔，不卡主界面）。默认关 */
     @JvmStatic
     fun schedulePrewarm(ctx: Context) {
-        if (prewarmed || !prewarmEnabled(ctx)) return
-        prewarmed = true
-        val app = ctx.applicationContext
-        val h = Handler(Looper.getMainLooper())
-        val steps = listOf<() -> Unit>(
-            { io.github.kyosee.venera.kazumi.KazumiEngine.get(app) },
-            { io.github.kyosee.venera.video.VideoActivity.engine(app) },
-        )
-        fun run(i: Int) {
-            if (i >= steps.size) return
-            Looper.myQueue().addIdleHandler {
-                try { steps[i]() } catch (e: Throwable) { Log.w(TAG, "prewarm failed", e) }
-                h.postDelayed({ run(i + 1) }, 1500)
-                false
+        try {
+            if (prewarmed || !prewarmEnabled(ctx)) return
+            prewarmed = true
+            val app = ctx.applicationContext
+            val h = Handler(Looper.getMainLooper())
+            val steps = listOf<Pair<String, () -> Unit>>(
+                "番剧" to { io.github.kyosee.venera.kazumi.KazumiEngine.get(app) },
+                "影视" to { io.github.kyosee.venera.video.VideoActivity.engine(app) },
+            )
+            fun run(i: Int) {
+                if (i >= steps.size) return
+                // 一定在主线程的空闲时刻建（Flutter 引擎只能在主线程建）
+                Looper.getMainLooper().queue.addIdleHandler {
+                    try { steps[i].second() } catch (e: Throwable) { SuitePerf.error(app, "预热${steps[i].first}引擎失败", e) }
+                    h.postDelayed({ run(i + 1) }, 1500)
+                    false
+                }
             }
+            h.postDelayed({ run(0) }, 2500)
+        } catch (e: Throwable) {
+            SuitePerf.error(ctx, "安排预热失败", e)
         }
-        h.postDelayed({ run(0) }, 2500)
     }
 }
 
 /** 进程一启动就初始化 Flutter（Impeller 开关）并开始跟踪各分区界面（androidx.startup） */
 class SuiteStartup : Initializer<Unit> {
     override fun create(context: Context) {
-        try { SuiteEngines.initLoader(context) } catch (e: Throwable) { Log.w("SuiteStartup", "initLoader", e) }
+        SuiteEngines.initLoaderSafe(context)
+        // 上次进程是怎么退出的（原生崩溃 / ANR / 被系统杀）→ 内部存储/Nagisaland/crash/
+        try { SuiteExitInfo.check(context) } catch (e: Throwable) { Log.w("SuiteStartup", "exit info", e) }
         SuiteNav.install(context.applicationContext as Application)
     }
 
@@ -141,6 +214,22 @@ object SuitePerf {
 
     fun log(ctx: Context, line: String) {
         if (!enabled(ctx)) return
+        write(line)
+    }
+
+    /** 出错：不管「记录切换耗时」开没开都写进 perf.txt（带异常堆栈） */
+    fun error(ctx: Context?, what: String, e: Throwable?) {
+        Log.w("SuitePerf", what, e)
+        val sb = StringBuilder("出错：").append(what)
+        if (e != null) {
+            val sw = java.io.StringWriter()
+            e.printStackTrace(java.io.PrintWriter(sw))
+            sb.append('\n').append(sw.toString().lines().take(30).joinToString("\n") { "    $it" })
+        }
+        write(sb.toString())
+    }
+
+    fun write(line: String) {
         val text = "${fmt.format(Date())}  $line\n"
         Log.i("SuitePerf", line)
         io.execute {

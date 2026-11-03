@@ -140,6 +140,22 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
 - H：「去验证」（`suite/CfVerifyActivity`）和登录页「Cookie 登录」共用 `suite/NagiHAuth`（Cloudflare Cookie + UA 覆盖，HCookieJar / UserAgentInterceptor 都用）；
   Google 登录按钮隐藏（WebView 里 Google OAuth 不可能成功）；去掉每次切到 H 自动读剪贴板。
 
+## 2026-11-04 v0.19.2（versionCode 52）：修 v0.19.1 切分区闪退
+- 现象：v0.19.1 点影视 / 番剧 / 漫画随机闪退，crash/ 里没有文件（原生层）。perf.txt 里同一个分区的引擎在一次切换后马上又「新建」
+  = 进程崩了被拉起；几乎都在第二个 Flutter 分区刚显示出来 1~2 秒后。
+- 判断：`FlutterEngineGroup` 里后建的引擎是从第一个 spawn 出来的，和它共用 UI / 渲染 / IO 线程和 GPU 资源上下文（v0.19.0 是三个独立引擎）。
+  没有原生 trace，不能 100% 确定，所以按「修不准就回退」处理：
+  - `SuiteEngines.create` 默认回到 v0.19.0 的独立 `FlutterEngine`；漫画界面 `provideFlutterEngine` 默认返回 null（界面自己建、自己销毁，和 v0.19.0 一样）。
+  - 引擎组、后台预热改成「流畅度设置」里的实验开关，**默认关**（换了键名 `engine_group_v2` / `prewarm_v2`，v0.19.1 时默认开的值不带过来）；
+    引擎组是否启用在进程里第一次用到时定下来，进程内不变。
+  - 引擎组 / 预热 / 占位引擎 / Flutter 初始化全部 try/catch：出错退回普通建引擎，异常（带堆栈）写进 `debug/perf.txt`（不管「记录切换耗时」开没开）；
+    不在主线程建引擎也会记一条。
+  - 其它 v0.19.1 改动（分区栏自定义、横屏竖排栏、Impeller 开关、perf 日志、番剧历史合并、H 验证）都保留。
+- 原生崩溃记录 `suite/SuiteExitInfo.kt`：每次启动（`SuiteStartup`，后台线程）用 `ActivityManager.getHistoricalProcessExitReasons`（Android 11+）
+  读系统记下的上次退出原因，写 `内部存储/Nagisaland/crash/exit-<时间>-<native|anr|crash|lowmem|signal…>.txt`（原因、description、退出码、
+  前后台、内存；ANR 附 trace 原文；原生崩溃附 tombstone 原文 `.pb` + 从里面抽出的可读字符串），perf.txt 里也记一行。
+  按时间戳只记新的；用户强停 / App 更新 / 正常退出不记。第一次运行会把系统还留着的历史（最多 16 条，含 v0.19.1 的崩溃）都写出来。
+
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后
 `flutter build apk --release --target-platform android-arm64 --dart-define-from-file=dart_defines.txt`（没有 dart_defines.txt 就去掉这个参数）。

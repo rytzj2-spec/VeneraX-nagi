@@ -32,11 +32,15 @@ object KazumiEngine {
     @JvmStatic
     @Synchronized
     fun reserve(context: Context) {
-        io.github.kyosee.venera.suite.SuiteEngines.initLoader(context)
+        io.github.kyosee.venera.suite.SuiteEngines.initLoaderSafe(context)
         if (FlutterEngineCache.getInstance().get(ID) != null) return
-        val p = FlutterEngine(context.applicationContext, null as FlutterLoader?, FlutterJNI(), null as Array<String>?, false)
-        placeholder = p
-        FlutterEngineCache.getInstance().put(ID, p)
+        try {
+            val p = FlutterEngine(context.applicationContext, null as FlutterLoader?, FlutterJNI(), null as Array<String>?, false)
+            placeholder = p
+            FlutterEngineCache.getInstance().put(ID, p)
+        } catch (e: Throwable) {
+            io.github.kyosee.venera.suite.SuitePerf.error(context, "番剧占位引擎创建失败", e)
+        }
     }
 
     @JvmStatic
@@ -50,7 +54,7 @@ object KazumiEngine {
             try { it.destroy() } catch (_: Throwable) {}
             placeholder = null
         }
-        // Nagisaland：从共享的 FlutterEngineGroup 建（见 SuiteEngines）
+        // Nagisaland：默认独立引擎（v0.19.0 的方式），开了共享引擎组才从组里建（见 SuiteEngines）
         val engine = io.github.kyosee.venera.suite.SuiteEngines.create(context, "kazumiMain", "番剧")
         cache.put(ID, engine)
         return engine
