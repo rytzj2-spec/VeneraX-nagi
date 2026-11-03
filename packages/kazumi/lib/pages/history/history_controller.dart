@@ -46,6 +46,17 @@ abstract class _HistoryController with Store {
     );
   }
 
+  /// Nagisaland：这部番在所有源里最近看的一条记录（换源后接着上次的集数和进度）
+  History? latestFor(BangumiItem bangumiItem, {String entryKind = HistoryEntryKind.online}) {
+    History? best;
+    for (final h in histories) {
+      if (h.bangumiItem.id != bangumiItem.id) continue;
+      if (HistoryEntryKind.normalize(h.entryKind) != entryKind) continue;
+      if (best == null || h.lastWatchTime.isAfter(best.lastWatchTime)) best = h;
+    }
+    return best;
+  }
+
   Progress? findProgress(
     BangumiItem bangumiItem,
     String adapterName,

@@ -170,6 +170,23 @@ class _VideoPageState extends State<VideoPage>
     var progress = historyController.lastWatching(
         videoPageController.bangumiItem,
         videoPageController.currentPlugin.name);
+    // Nagisaland：最近一次是在别的源上看的（换源了 / 原来的源不可用自动换的），接着那一集和进度；
+    // 新源的线路编号不一定一样，选第一条有这一集的线路
+    final latest = historyController.latestFor(videoPageController.bangumiItem);
+    if (latest != null && latest.adapterName != videoPageController.currentPlugin.name) {
+      final ep = latest.lastWatchEpisode;
+      final p = latest.progresses[ep];
+      final roads = videoPageController.roadList;
+      var road = p != null && p.road < roads.length && roads[p.road].data.length >= ep ? p.road : -1;
+      if (road < 0) road = roads.indexWhere((r) => r.data.length >= ep);
+      if (ep > 0 && road >= 0) {
+        progress = null;
+        videoPageController.resetEpisodeState(episode: ep, road: road);
+        if (playResume && p != null) {
+          videoPageController.historyOffset = p.progress.inSeconds;
+        }
+      }
+    }
     if (progress != null) {
       if (videoPageController.roadList.length > progress.road) {
         if (videoPageController.roadList[progress.road].data.length >=

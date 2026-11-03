@@ -19,6 +19,10 @@ import 'package:kazumi/pages/info/info_controller.dart';
 import 'package:kazumi/pages/info/info_tabview.dart';
 import 'package:kazumi/pages/info/rating_review_dialog.dart';
 import 'package:kazumi/pages/info/source_sheet.dart';
+import 'package:kazumi/pages/history/history_controller.dart';
+import 'package:kazumi/pages/video/video_playback_args.dart';
+import 'package:kazumi/services/player/auto_source_service.dart';
+import 'package:kazumi/services/plugin/rule_engine_models.dart' show RuleCancelToken;
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/platform/desktop_window_config.dart';
@@ -42,7 +46,7 @@ class InfoPage extends StatefulWidget {
 }
 
 class _InfoPageState extends State<InfoPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, KazumiDialogOwner {
   static const List<String> _infoTabs = <String>[
     '概览',
     '吐槽',
@@ -313,11 +317,66 @@ class _InfoPageState extends State<InfoPage>
       );
       return;
     }
+    _autoPickSource();
+  }
+
+  /// 手动选源（原来的「开始观看」）
+  void _openSourceSheet() {
+    if (!mounted) return;
     showAdaptiveBottomSheet<void>(
       context: context,
       maxHeightFactor: 0.88,
       builder: (_) => SourceSheet(infoController: infoController),
     );
+  }
+
+  /// Nagisaland：后台同时测所有源，自动用最快能用的；提示里可以改成手动选源。都不行就打开手动选源
+  Future<void> _autoPickSource() async {
+    if (dialogs.isRunning) return;
+    final bangumi = infoController.bangumiItem;
+    final latest = inject<HistoryController>().latestFor(bangumi);
+    final needEpisode = (latest?.lastWatchEpisode ?? 1) < 1 ? 1 : (latest?.lastWatchEpisode ?? 1);
+    await dialogs.run((task) async {
+      final cancelToken = RuleCancelToken();
+      final candidates = await task.loading(
+        message: '正在自动选源（同时测 ${widget.pluginsController.pluginList.length} 个源）',
+        barrierDismissible: true,
+        onCancel: cancelToken.cancel,
+        action: () => AutoSourceService.rank(
+          bangumi,
+          widget.pluginsController.pluginList,
+          needEpisode: needEpisode,
+          cancelToken: cancelToken,
+        ),
+      );
+      if (cancelToken.isCancelled) return;
+      if (candidates.isEmpty) {
+        KazumiDialog.showToast(message: '没有自动找到能用的源，请手动选择', duration: const Duration(seconds: 3));
+        _openSourceSheet();
+        return;
+      }
+      final best = candidates.first;
+      KazumiDialog.showToast(
+        message: '已自动选择「${best.plugin.name}」（${candidates.length} 个源可用，${(best.elapsed.inMilliseconds / 1000).toStringAsFixed(1)} 秒）',
+        showActionButton: true,
+        actionLabel: '手动选源',
+        onActionPressed: _openSourceSheet,
+        duration: const Duration(seconds: 5),
+      );
+      task.withContext((context) => context.pushNamed(
+            '/video/',
+            arguments: OnlineVideoPlaybackArgs(
+              bangumiItem: bangumi,
+              plugin: best.plugin,
+              title: best.item.name,
+              src: best.item.src,
+              roads: best.roads,
+            ),
+          ));
+    }, onError: (error, stackTrace) {
+      KazumiLogger().w('InfoPage: auto source failed', error: error);
+      _openSourceSheet();
+    });
   }
 
   Future<void> _waitForMinimumBangumiInfoLoadingDuration(
@@ -468,11 +527,20 @@ class _InfoPageState extends State<InfoPage>
           );
         }),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        tooltip: '开始观看',
-        onPressed: _startWatching,
-        label: const Text('开始观看'),
-        icon: const Icon(Icons.play_arrow_rounded),
+      // Nagisaland：点 = 自动选源直接播；长按 = 手动选源
+      floatingActionButton: GestureDetector(
+        onLongPress: () {
+          if (widget.pluginsController.pluginList.isEmpty) {
+            _startWatching();
+          } else {
+            _openSourceSheet();
+          }
+        },
+        child: FloatingActionButton.extended(
+          onPressed: _startWatching,
+          label: const Text('开始观看'),
+          icon: const Icon(Icons.play_arrow_rounded),
+        ),
       ),
     );
   }

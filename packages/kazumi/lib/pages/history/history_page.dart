@@ -193,7 +193,10 @@ class _HistoryCardState extends State<_HistoryCard> with KazumiDialogOwner {
             _playbackService.open(widget.history, cancelToken: cancelToken),
       );
       switch (result) {
-        case HistoryPlaybackReady(:final args):
+        case HistoryPlaybackReady(:final args, :final notice):
+          if (notice != null) {
+            KazumiDialog.showToast(message: notice, duration: const Duration(seconds: 4));
+          }
           task.withContext(
               (context) => context.pushNamed('/video/', arguments: args));
         case HistoryPlaybackUnavailable(:final reason):

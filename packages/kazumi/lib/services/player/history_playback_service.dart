@@ -5,6 +5,7 @@ import 'package:kazumi/pages/video/video_playback_args.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/player/auto_source_service.dart';
 import 'package:kazumi/services/plugin/rule_engine_models.dart'
     show RuleCancelToken;
 
@@ -13,9 +14,12 @@ sealed class HistoryPlaybackResult {
 }
 
 class HistoryPlaybackReady extends HistoryPlaybackResult {
-  const HistoryPlaybackReady(this.args);
+  const HistoryPlaybackReady(this.args, {this.notice});
 
   final VideoPlaybackArgs args;
+
+  /// 给用户看的提示（例如「原来的源不可用，已换成 xxx」）
+  final String? notice;
 }
 
 class HistoryPlaybackUnavailable extends HistoryPlaybackResult {
@@ -49,9 +53,34 @@ class HistoryPlaybackService {
     }
 
     final args = await _onlineArgs(history, cancelToken);
-    return args == null
-        ? const HistoryPlaybackUnavailable('在线源不可用，请重新选择播放源')
-        : HistoryPlaybackReady(args);
+    if (args != null) return HistoryPlaybackReady(args);
+
+    // Nagisaland：原来的源不可用 → 自动在其它源里找同一部番（要有这一集），用最快能用的那个。
+    // 播放页会按「所有源里最近一次」的记录接着同一集、同一位置播。
+    if (cancelToken?.isCancelled == true) {
+      return const HistoryPlaybackUnavailable('已取消');
+    }
+    final candidates = await AutoSourceService.rank(
+      history.bangumiItem,
+      _pluginsController.pluginList,
+      needEpisode: history.lastWatchEpisode < 1 ? 1 : history.lastWatchEpisode,
+      exclude: {history.adapterName},
+      cancelToken: cancelToken,
+    );
+    if (candidates.isEmpty) {
+      return const HistoryPlaybackUnavailable('原来的源不可用，其它源里也没找到这一集，请手动选源');
+    }
+    final best = candidates.first;
+    return HistoryPlaybackReady(
+      OnlineVideoPlaybackArgs(
+        bangumiItem: history.bangumiItem,
+        plugin: best.plugin,
+        title: history.bangumiItem.nameCn.isEmpty ? history.bangumiItem.name : history.bangumiItem.nameCn,
+        src: best.item.src,
+        roads: best.roads,
+      ),
+      notice: '「${history.adapterName}」不可用，已自动换成「${best.plugin.name}」，接着第 ${history.lastWatchEpisode} 集',
+    );
   }
 
   Future<VideoPlaybackArgs?> _onlineArgs(

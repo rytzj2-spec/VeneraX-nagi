@@ -117,6 +117,16 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
   `KazumiEngine.reserve()`（audio_service 的坑，同漫画）。`SuiteNav` 加 `video`，底栏「影视」在番剧和 H 之间；主界面网页加按钮和 `video.json`。
 - 飞牛影视：接口没公开，确认后在 `emby_api.dart` 的 `ServerKind.fnos` 接上（现在添加时会提示未接入）。
 
+## 2026-11-04 真机反馈修复
+- 番剧自动选源（`packages/kazumi/lib/services/player/auto_source_service.dart`）：所有源同时测「能搜到 → 能拿到播放列表 → 有要看的那一集」，
+  按耗时排。详情页「开始观看」= 自动选最快的直接播（提示里可点「手动选源」，长按按钮也是手动选源，都不行自动打开选源面板）。
+  不在后台解析最终视频地址（每个源要开 WebView，太重），解析失败时在播放页手动换源。
+- 番剧历史：原来的源不可用时自动换一个有这一集的源（`history_playback_service.dart`）；播放页恢复进度改成看「这部番在所有源里最近一次」
+  （`HistoryController.latestFor`），换源后接着同一集、同一位置。
+- H：hanime1 的 Cloudflare 验证页（403 + Just a moment，不定时出现）自动静默重试 3 次再报「网站被加固」（`NetworkRepo.cfRetry`）。
+- 影视登录：用户名必填；失败时显示服务器返回的内容；Emby 用 `Emby …` 授权头 + 地址参数里的客户端信息、不发 Authorization 头；
+  自动试 `/emby` 前缀；添加服务器改成「类型 / http·https / 地址 / 端口 → 测试连接 → 用户名密码」两步。
+
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后
 `flutter build apk --release --target-platform android-arm64 --dart-define-from-file=dart_defines.txt`（没有 dart_defines.txt 就去掉这个参数）。
