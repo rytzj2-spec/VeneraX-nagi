@@ -24,6 +24,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.github.kyosee.venera.MainActivity
 import io.github.kyosee.venera.kazumi.KazumiActivity
+import io.github.kyosee.venera.video.VideoActivity
 import java.lang.ref.WeakReference
 import kotlin.math.roundToInt
 
@@ -60,13 +61,14 @@ object SuiteNav {
         return nagiClass != null
     }
 
-    /** 切到某个分区：comic / anime / h / lib / site / extract / emu */
+    /** 切到某个分区：comic / anime / video / h / lib / site / extract / emu */
     @JvmStatic
     fun go(from: Activity, to: String) {
         if (!enabled()) return
         val cls: Class<*> = when (to) {
             "comic" -> MainActivity::class.java
             "anime" -> KazumiActivity::class.java
+            "video" -> VideoActivity::class.java
             "h" -> hClass ?: return
             in NAGI_TABS -> { pendingTab = to; nagiClass!! }
             else -> return
@@ -207,6 +209,7 @@ class SuiteNavBar(ctx: Context, private val current: String, private val onPick:
             Item("site", "小站", p("M3 9l1.5-5h15L21 9", "M4 9v11h16V9", "M3 9h18", "M9 20v-6h6v6")),
             Item("comic", "漫画", p("M2 5.5C4.5 4 8 4 12 6c4-2 7.5-2 10-.5V19c-2.5-1.5-6-1.5-10 .5-4-2-7.5-2-10-.5z", "M12 6v13.5")),
             Item("anime", "番剧", listOf(rr(2f, 6f, 22f, 20f, 2.5f)) + p("M8 2l4 4 4-4", "M10 10.5v5l4.5-2.5z")),
+            Item("video", "影视", listOf(rr(2f, 4f, 22f, 20f, 2.5f)) + p("M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5")),
             Item("h", "H", p("M12 20.5s-7.5-4.6-9.3-9.2C1.4 8 3.6 4.5 7 4.5c2.1 0 3.6 1.2 5 3 1.4-1.8 2.9-3 5-3 3.4 0 5.6 3.5 4.3 6.8-1.8 4.6-9.3 9.2-9.3 9.2z")),
             Item("extract", "解压", p("M21 8v13H3V8", "M1 3h22v5H1z", "M10 12h4")),
             Item("emu", "模拟器", listOf(rr(2f, 7f, 22f, 19f, 4f)) + p("M7 11v4M5 13h4") + listOf(c(16f, 12f, 1f), c(18f, 14f, 1f))),

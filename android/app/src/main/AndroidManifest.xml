@@ -112,6 +112,24 @@
                 <data android:scheme="kazumi" android:host="search"/>
             </intent-filter>
         </activity>
+        <!-- Nagisaland：影视分区（Emby / Jellyfin）。独立 Flutter 引擎，dart 入口 nagiVideoMain -->
+        <activity
+            android:name=".video.VideoActivity"
+            android:label="影视"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:resizeableActivity="true"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme" />
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false" />
+        </activity>
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
             android:foregroundServiceType="dataSync"

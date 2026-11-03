@@ -19,7 +19,7 @@ Nagisaland 用的 VeneraX 离线优化版（私有，不发布 Release）。基�
 
 # suite 分支：Nagisaland 手机版多分区（漫画 + 番剧 + H）
 
-只自己用，不分发。底栏：游戏库｜小站｜漫画｜番剧｜H｜解压｜模拟器，常驻、点一下切换。
+只自己用，不分发。底栏：游戏库｜小站｜漫画｜番剧｜影视｜H｜解压｜模拟器，常驻、点一下切换。
 
 | 分区 | 来源 | 协议 | 位置 |
 | --- | --- | --- | --- |
@@ -101,6 +101,27 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
 - 出正式包：Actions 产物 `Nagisaland-v<版本>-…-arm64-v8a.apk` 放进 Nagisaland-Mobile 的 `ci\`，双击「出正式包.bat」（`sign_release.py`）：
   加 `emulators\` 里的模拟器、生成 `emulators.json`、用 `nagisaland-mobile.keystore` 签名 → `dist\Nagisaland_v<版本>.apk`。
 - 上游同步：见 `doc/上游同步.md`。
+
+## 2026-11-03 影视分区（Emby / Jellyfin，参考 Hills）
+- Dart：`packages/kazumi/lib/nagi_video/`（放在 kazumi 包里，直接用它的 media_kit / dio / cached_network_image，不加新依赖）
+  - `emby_api.dart`：登录（`/System/Info/Public` 自动认 Emby / Jellyfin → `/Users/AuthenticateByName`，密码不保存，只存令牌）、
+    媒体库、继续观看、下一集、最新、条目分页 / 搜索、季 / 集、播放地址（`PlaybackInfo` → `/Videos/{id}/stream?static=true` 直接播原文件，
+    不转码；外挂字幕）、播放进度回报（`/Sessions/Playing[/Progress|/Stopped]`）、标记已看。
+  - `video_app.dart`：入口 `nagiVideoMain`；顶部三个分页「服务器｜聚合视界｜设置」（底部已有 Nagisaland 分区栏）。
+    聚合视界 = 所有服务器的继续观看 / 下一集 / 最近添加合在一起 + 跨服务器搜索。
+  - `browse_pages.dart`（服务器首页、媒体库网格、搜索）、`detail_page.dart`（电影 / 剧，选季选集，长按一集标记已看 / 未看）、
+    `player_page.dart`（media_kit，配置照番剧；断点续播、每 10 秒回报进度、字幕 / 音轨 / 倍速、自动下一集、横屏）。
+  - `video_store.dart`：服务器和设置存在 `getApplicationSupportDirectory()/nagi_video.json`（不用番剧的 Hive：两个引擎同时开同一个库会冲突）；
+    图片缓存也单独一个库 `nagiVideoImages`。
+- 原生：`android/app/.../video/VideoActivity.kt`，独立 Flutter 引擎（缓存 id `nagi_video_engine`，入口 `nagiVideoMain`），创建前
+  `KazumiEngine.reserve()`（audio_service 的坑，同漫画）。`SuiteNav` 加 `video`，底栏「影视」在番剧和 H 之间；主界面网页加按钮和 `video.json`。
+- 飞牛影视：接口没公开，确认后在 `emby_api.dart` 的 `ServerKind.fnos` 接上（现在添加时会提示未接入）。
+
+## 本地编译（不用 CI）
+在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后
+`flutter build apk --release --target-platform android-arm64 --dart-define-from-file=dart_defines.txt`（没有 dart_defines.txt 就去掉这个参数）。
+`android/key.properties` 指向任意密钥都行（CI 用临时密钥）；产物 `build/app/outputs/apk/release/Nagisaland-<版本>-arm64-v8a.apk`。
+再双击 Nagisaland-Mobile 的「出正式包.bat」：它会自动在 `..\NagiBuild\build\app\outputs\…` 和 `ci\` 里找最新的包，加模拟器、用正式密钥签名。
 
 ## 用户电脑上的部分（不在仓库里；统一版之前的旧流程）
 - merge_venerax.py：取 suite APK；provider authority 改成 Nagisaland 包名（现在有 `.fileprovider`、`.androidx-startup`、

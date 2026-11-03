@@ -1,5 +1,6 @@
 import 'package:kazumi/nagi_theme.dart';
 import 'package:kazumi/main.dart' as kazumi_app;
+import 'package:kazumi/nagi_video/video_app.dart' as nagi_video;
 import 'dart:async';
 import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:dynamic_color/dynamic_color.dart';
@@ -408,4 +409,10 @@ class _SystemUiProvider extends StatelessWidget {
 @pragma('vm:entry-point')
 void kazumiMain() {
   kazumi_app.main();
+}
+
+// ---- Nagisaland：影视分区入口（Emby / Jellyfin，packages/kazumi/lib/nagi_video），原生端 VideoActivity 以 "nagiVideoMain" 启动 ----
+@pragma('vm:entry-point')
+void nagiVideoMain() {
+  nagi_video.nagiVideoMain();
 }

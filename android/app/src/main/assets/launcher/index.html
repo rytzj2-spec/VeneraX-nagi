@@ -243,6 +243,7 @@ ol.steps { padding-left: 20px; margin: 8px 0; color: var(--sub); font-size: 13px
   <button data-tab="site"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M3 9h18"/><path d="M9 20v-6h6v6"/></svg>小站</button>
   <button data-comic hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 5.5C4.5 4 8 4 12 6c4-2 7.5-2 10-.5V19c-2.5-1.5-6-1.5-10 .5-4-2-7.5-2-10-.5z"/><path d="M12 6v13.5"/></svg>漫画</button>
   <button data-anime hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="14" rx="2.5"/><path d="M8 2l4 4 4-4"/><path d="M10 10.5v5l4.5-2.5z"/></svg>番剧</button>
+  <button data-video hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5"/></svg>影视</button>
   <button data-h hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20.5s-7.5-4.6-9.3-9.2C1.4 8 3.6 4.5 7 4.5c2.1 0 3.6 1.2 5 3 1.4-1.8 2.9-3 5-3 3.4 0 5.6 3.5 4.3 6.8-1.8 4.6-9.3 9.2-9.3 9.2z"/></svg>H</button>
   <button data-tab="extract"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>解压</button>
   <button data-tab="emu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="12" rx="4"/><path d="M7 11v4M5 13h4"/><circle cx="16" cy="12" r="1"/><circle cx="18" cy="14" r="1"/></svg>模拟器</button>
@@ -298,6 +299,7 @@ const App = (() => {
   $('#nav').onclick = e => {
     if (e.target.closest('button[data-comic]')) { openComic(); return; }
     if (e.target.closest('button[data-anime]')) { openAnime(); return; }
+    if (e.target.closest('button[data-video]')) { openVideo(); return; }
     if (e.target.closest('button[data-h]')) { openH(); return; }
     const b = e.target.closest('button[data-tab]'); if (b) tab(b.dataset.tab);
   };
@@ -316,6 +318,14 @@ const App = (() => {
     if (!anime || !N) return;
     const err = N.launchIntent(JSON.stringify({ pkg: 'com.nagisaland.mobile', cls: anime.cls, action: 'android.intent.action.MAIN', extras: anime.extras || undefined }));
     if (err) toast('打不开番剧：' + err, 4000);
+  }
+  // 影视：Emby / Jellyfin（统一版才有 video.json）
+  let video = null;
+  fetch('video.json').then(r => r.ok ? r.json() : null).then(j => { video = j; const b = $('#nav button[data-video]'); if (b) b.hidden = !j; }).catch(() => {});
+  function openVideo() {
+    if (!video || !N) return;
+    const err = N.launchIntent(JSON.stringify({ pkg: 'com.nagisaland.mobile', cls: video.cls, action: 'android.intent.action.MAIN', extras: video.extras || undefined }));
+    if (err) toast('打不开影视：' + err, 4000);
   }
   // H：同一个 App 里的 Han1meViewer 界面（suite APK 带 H 分区时才有 h.json）
   let hsec = null;
