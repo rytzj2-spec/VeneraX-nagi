@@ -1,0 +1,7 @@
+This directory contains Han1meViewer (https://github.com/Mlr111/Han1meViewer, commit 3d9050e),
+originally by Yenaly Liew and contributors, licensed under the Apache License 2.0 (see LICENSE-Han1meViewer).
+
+Modified for Nagisaland suite (personal use): converted from an application module to a library module,
+removed Firebase and the in-app updater, changed the FileProvider, application/activity manifest attributes,
+crash handling and theming scope, added suite navigation hooks, and updated the HTML parser for the 2026 site layout.
+Parts of the 2026 parsing logic follow misaka10032w/Han1meViewer (Apache-2.0).

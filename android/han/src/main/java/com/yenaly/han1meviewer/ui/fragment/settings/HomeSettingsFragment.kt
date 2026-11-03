@@ -16,8 +16,6 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.preference.Preference
 import androidx.preference.SeekBarPreference
 import androidx.preference.SwitchPreferenceCompat
-import com.google.firebase.Firebase
-import com.google.firebase.analytics.analytics
 import com.yenaly.han1meviewer.BuildConfig
 import com.yenaly.han1meviewer.HA1_GITHUB_FORUM_URL
 import com.yenaly.han1meviewer.HA1_GITHUB_ISSUE_URL
@@ -244,10 +242,8 @@ class HomeSettingsFragment : YenalySettingsFragment(R.xml.settings_home) {
             setSummaryConverter(defValue = 0, converter = ::toIntervalDaysPrettyString)
         }
         useAnalytics.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                Firebase.analytics.setAnalyticsCollectionEnabled(newValue as Boolean)
-                return@setOnPreferenceChangeListener true
-            }
+            // Nagisaland suite：没有 Firebase，隐藏「统计」开关
+            isVisible = false
             setOnPreferenceLongClickListener {
                 privacyDialog.showWithBlurEffect()
                 return@setOnPreferenceLongClickListener true

@@ -1,105 +1,65 @@
 @file:Suppress("UnstableApiUsage")
 
-import Config.Version.createVersion
-import Config.Version.source
-import Config.isRelease
-import Config.lastCommitSha
-import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+import java.time.Year
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+// Nagisaland suite：H 分区。Han1meViewer（Mlr111/Han1meViewer @3d9050e，Apache-2.0）原来的 app 模块，
+// 改成 library 由 :app 依赖。去掉了 Firebase、buildSrc（版本号）、签名配置，插件版本统一在 settings.gradle。
 plugins {
-    alias(libs.plugins.com.android.application)
-    alias(libs.plugins.org.jetbrains.kotlin.android)
-    alias(libs.plugins.org.jetbrains.kotlin.plugin.parcelize)
-    alias(libs.plugins.org.jetbrains.kotlin.plugin.serialization)
-    alias(libs.plugins.com.google.devtools.ksp)
-    alias(libs.plugins.com.google.gms.google.services)
-    alias(libs.plugins.com.google.firebase.crashlytics)
-    alias(libs.plugins.com.google.firebase.firebase.pref)
-    // alias(libs.plugins.compose.compiler)
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.parcelize")
+    id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.devtools.ksp")
 }
 
 android {
-    compileSdk = property("compile.sdk")?.toString()?.toIntOrNull()
-
-    val commitSha = if (isRelease) lastCommitSha else "b8eace8" // 方便调试
-
-    // 先 Github Secrets 再读取环境变量，若没有则读取本地文件
-
-    val githubToken = System.getenv("HA_GITHUB_TOKEN") ?: File(
-        projectDir, "ha1_github_token.txt"
-    ).checkIfExists()?.readText().orEmpty()
-
+    namespace = "com.yenaly.han1meviewer"
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.yenaly.han1meviewer"
-        minSdk = property("min.sdk")?.toString()?.toIntOrNull()
-        targetSdk = property("target.sdk")?.toString()?.toIntOrNull()
-        val (code, name) = createVersion(major = 0, minor = 15, patch = 5)
-        versionCode = code
-        versionName = name
+        minSdk = 24
+        consumerProguardFiles("proguard-rules.pro")
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        buildConfigField("String", "COMMIT_SHA", "\"$commitSha\"")
-        buildConfigField("String", "VERSION_NAME", "\"${versionName}\"")
-        buildConfigField("int", "VERSION_CODE", "$versionCode")
-        buildConfigField("String", "HA_GITHUB_TOKEN", "\"${githubToken}\"")
-        buildConfigField("String", "VERSION_SOURCE", "\"${source}\"")
-
-        buildConfigField("int", "SEARCH_YEAR_RANGE_END", "${Config.thisYear}")
-    }
-    signingConfigs {
-        create("release") {
-            storeFile = file(System.getenv("HOME") + "/.android/keystore.jks")
-            storePassword = System.getenv("KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEYSTORE_PASSWORD")
-        }
+        buildConfigField("String", "COMMIT_SHA", "\"3d9050e\"")
+        buildConfigField("String", "VERSION_NAME", "\"0.15.5-nagi\"")
+        buildConfigField("int", "VERSION_CODE", "1")
+        buildConfigField("String", "HA_GITHUB_TOKEN", "\"\"")
+        buildConfigField("String", "VERSION_SOURCE", "\"nagi\"")
+        buildConfigField("int", "SEARCH_YEAR_RANGE_END", "${Year.now().value}")
+        // library 的 BuildConfig 没有 APPLICATION_ID，原代码里只用来拼 FileProvider authority（已改成运行时取包名）
+        buildConfigField("String", "APPLICATION_ID", "\"com.yenaly.han1meviewer\"")
+        buildConfigField("boolean", "NAGI_SUITE", "true")
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
-            )
-            signingConfig = signingConfigs.getByName("release")
-            applicationVariants.all variant@{
-                this@variant.outputs.all output@{
-                    val output = this@output as BaseVariantOutputImpl
-                    output.outputFileName = "Han1meViewer-v${defaultConfig.versionName}.apk"
-                }
-            }
-        }
-        debug {
             isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
-            )
-            applicationIdSuffix = ".debug"
         }
     }
     buildFeatures {
         //noinspection DataBindingWithoutKapt
         dataBinding = true
+        viewBinding = true
         buildConfig = true
-
-
-        // compose = true
     }
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_21.toString()
-        freeCompilerArgs = listOf("-opt-in=kotlin.RequiresOptIn", "-Xjvm-default=all-compatibility")
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     lint {
         disable += setOf("EnsureInitializerMetadata")
+        abortOnError = false
+        checkReleaseBuilds = false
     }
-    namespace = "com.yenaly.han1meviewer"
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+        freeCompilerArgs.addAll("-opt-in=kotlin.RequiresOptIn", "-Xjvm-default=all-compatibility")
+    }
 }
 
 dependencies {
@@ -115,13 +75,6 @@ dependencies {
     implementation(libs.bundles.android.jetpack)
     implementation(libs.palette)
     implementation("com.google.android.material:material:1.11.0")
-//    implementation(platform(libs.compose.compose.bom))
-//    androidTestImplementation(platform(libs.compose.compose.bom))
-//    implementation(libs.compose.material3)
-//    implementation(libs.androidx.activity.compose)
-//    implementation(libs.compose.ui.graphics)
-//    implementation(libs.compose.ui.ui.tooling.preview)
-//    debugImplementation(libs.compose.ui.ui.tooling)
 
     // datetime
 
@@ -165,27 +118,7 @@ dependencies {
     implementation(libs.statelayout)
     implementation(libs.circular.reveal.switch)
 
-    // firebase
-
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.analytics)
-    implementation(libs.firebase.crashlytics)
-    implementation(libs.firebase.perf)
-    implementation(libs.firebase.config)
-
     ksp(libs.room.compiler)
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
-
-    testImplementation(libs.junit)
-
-    androidTestImplementation(libs.test.junit)
-    androidTestImplementation(libs.test.espresso.core)
-
-    // debugImplementation(libs.leak.canary)
 }
-
-/**
- * This function is used to check if a file exists and is a file.
- */
-fun File.checkIfExists(): File? = if (exists() && isFile) this else null

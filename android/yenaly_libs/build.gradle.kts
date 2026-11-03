@@ -1,53 +1,53 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+// Nagisaland suite：Han1meViewer 自带的工具库（Apache-2.0），插件版本统一在 settings.gradle。
 plugins {
-    alias(libs.plugins.com.android.library)
-    alias(libs.plugins.org.jetbrains.kotlin.android)
-    alias(libs.plugins.com.google.devtools.ksp)
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
 }
 
 android {
-    compileSdk = property("compile.sdk")?.toString()?.toIntOrNull()
+    namespace = "com.yenaly.yenaly_libs"
+    compileSdk = 36
+    resourcePrefix = "yenaly_"
 
     defaultConfig {
-        minSdk = property("min.sdk")?.toString()?.toIntOrNull()
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        minSdk = 24
         consumerProguardFiles("consumer-rules.pro")
     }
 
     buildFeatures {
         //noinspection DataBindingWithoutKapt
         dataBinding = true
+        buildConfig = true
     }
     buildTypes {
         release {
-            isMinifyEnabled = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            isMinifyEnabled = false
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_21.toString()
-        freeCompilerArgs = listOf(
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+        freeCompilerArgs.addAll(
             "-opt-in=kotlin.RequiresOptIn",
             "-Xskip-prerelease-check",
             "-opt-in=kotlin.ExperimentalStdlibApi"
         )
     }
-    buildFeatures {
-        buildConfig = true
-    }
-    resourcePrefix = "yenaly_"
-    namespace = "com.yenaly.yenaly_libs"
 }
 
 dependencies {
-
     implementation(libs.recyclerview)
     implementation(libs.core.ktx)
     implementation(libs.appcompat)
@@ -60,9 +60,4 @@ dependencies {
     implementation(libs.preference.ktx)
     implementation(libs.startup.runtime)
     implementation(libs.gson)
-
-    testImplementation(libs.junit)
-
-    androidTestImplementation(libs.test.junit)
-    androidTestImplementation(libs.test.espresso.core)
 }

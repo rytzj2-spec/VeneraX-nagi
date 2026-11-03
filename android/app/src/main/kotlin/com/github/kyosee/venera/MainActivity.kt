@@ -30,6 +30,8 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugins.GeneratedPluginRegistrant
+import io.github.kyosee.venera.kazumi.KazumiEngine
+import io.github.kyosee.venera.suite.SuiteNav
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicInteger
@@ -57,7 +59,11 @@ class MainActivity : FlutterFragmentActivity() {
     private var notificationRouteHandler: ((String) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Nagisaland suite：在本引擎注册 audio_service 插件之前占好它要找的引擎位置，见 KazumiEngine
+        KazumiEngine.reserve(this)
         super.onCreate(savedInstanceState)
+        // Nagisaland suite：常驻底栏
+        SuiteNav.attach(this, SuiteNav.COMIC)
 
         if (intent?.action == Intent.ACTION_SEND) {
             if (intent.type == "text/plain") {
@@ -67,6 +73,12 @@ class MainActivity : FlutterFragmentActivity() {
             }
         }
         handleNotificationRoute(intent)
+    }
+
+    // Nagisaland suite：漫画首页按返回键退出时，整个任务退到后台，各分区状态保留
+    override fun finish() {
+        if (SuiteNav.interceptFinish(this)) return
+        super.finish()
     }
 
     override fun onNewIntent(intent: Intent) {
