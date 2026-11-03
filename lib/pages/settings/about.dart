@@ -64,10 +64,6 @@ class _AboutSettingsState extends State<AboutSettings> {
             },
           ).fixHeight(32),
         ).toSliver(),
-        _SwitchSetting(
-          title: "Check for updates on startup".tl,
-          settingKey: "checkUpdateOnStart",
-        ).toSliver(),
         ListTile(
           title: Text("Guide".tl),
           subtitle: Text("How to use the main features".tl),
@@ -282,6 +278,12 @@ Future<void> checkUpdateUi([
   bool showMessageIfNoUpdate = true,
   bool delay = false,
 ]) async {
+  // Nagisaland suite：不检查、不下载上游 VeneraX 的安装包，更新由 Nagisaland 统一打包
+  if (showMessageIfNoUpdate) {
+    App.rootContext.showMessage(message: "漫画分区随 Nagisaland 一起更新");
+  }
+  return;
+  // ignore: dead_code
   try {
     var value = await _checkUpdateDetails();
     if (value.hasUpdate && value.release != null) {

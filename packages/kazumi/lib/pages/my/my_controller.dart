@@ -153,6 +153,12 @@ abstract class _MyController with Store {
   }
 
   Future<bool> checkUpdate({String type = 'manual'}) async {
+    // Nagisaland suite：番剧分区随 Nagisaland 一起更新，不检查、不下载上游 Kazumi 的安装包
+    if (type == 'manual') {
+      KazumiDialog.showToast(message: '番剧分区随 Nagisaland 一起更新');
+    }
+    return true;
+    // ignore: dead_code
     try {
       final autoUpdater = AutoUpdater();
 

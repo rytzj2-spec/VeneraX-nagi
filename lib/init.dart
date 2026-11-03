@@ -17,7 +17,6 @@ import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/pages/comic_source_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
-import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/utils/app_links.dart';
 import 'package:venera/utils/handle_notification_route.dart';
 import 'package:venera/utils/handle_text_share.dart';
@@ -171,10 +170,8 @@ Future<void> _checkAppUpdates() async {
     unawaited(ComicSourcePage.checkComicSourceUpdate());
   }
 
-  // App update check runs on each startup when enabled.
-  if (appdata.settings['checkUpdateOnStart'] == true) {
-    await checkUpdateUi(false, false);
-  }
+  // Nagisaland suite：漫画分区随 Nagisaland 一起更新，不检查 Kyosee/VeneraX 的上游版本
+  // （否则会提示下载原版 VeneraX，装上就把套件覆盖坏了）。漫画源脚本的更新检查照旧。
 }
 
 void checkUpdates() {
