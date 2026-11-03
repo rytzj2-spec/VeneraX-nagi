@@ -6,7 +6,7 @@ version: 2.3.6+249
 
 environment:
   sdk: '>=3.12.0 <4.0.0'
-  flutter: 3.44.3
+  flutter: 3.47.7
 
 dependencies:
   flutter:
@@ -45,11 +45,9 @@ dependencies:
       url: https://github.com/venera-app/flutter_desktop_webview
       path: packages/desktop_webview_window
       ref: 7801fc582ecf5a7351632887891ecf309a7b2583
-  flutter_inappwebview:
-    git:
-      url: https://github.com/venera-app/flutter_inappwebview
-      path: flutter_inappwebview
-      ref: 3ef899b3db57c911b080979f1392253b835f98ab
+  # Nagisaland suite：用官方 6.1.5（和官方 Kazumi 一致）。VeneraX 原来的 fork（6.2.0-beta.3）会遵守
+  # UserScript.forMainFrameOnly（默认 true），番剧的视频解析脚本进不了 iframe，大量源「视频解析超时」。
+  flutter_inappwebview: 6.1.5
   app_links: ^7.2.1
   sliver_tools: ^0.2.12
   flutter_file_dialog: ^3.3.2
@@ -103,6 +101,26 @@ dependencies:
   pdfrx_engine: ^0.4.3
   # Supplies PDFium on all native platforms, including the Apple XCFramework.
   pdfium_flutter: ^0.2.3
+  # Nagisaland suite：番剧分区（Kazumi 2.4.2，GPL-3.0，见 packages/kazumi）
+  kazumi:
+    path: packages/kazumi
+
+# 两个工程共用一套依赖：冲突的包统一用 VeneraX 的版本
+dependency_overrides:
+  connectivity_plus: 7.0.0
+  photo_view:
+    git:
+      url: https://github.com/venera-app/photo_view
+      ref: a1255d1b5945aad4b7323303ec2ecdf0c90ffc4c
+  webdav_client:
+    git:
+      url: https://github.com/venera-app/webdav_client
+      ref: 2f669c98fb81cff1c64fee93466a1475c77e4273
+  desktop_webview_window:
+    git:
+      url: https://github.com/venera-app/flutter_desktop_webview
+      path: packages/desktop_webview_window
+      ref: 7801fc582ecf5a7351632887891ecf309a7b2583
 
 dev_dependencies:
   flutter_test:
@@ -151,9 +169,18 @@ flutter:
     - doc/guide.en.md
     # Bundled so the import help works offline and outlives the repo page.
     - doc/import_comic.md
+    # Kazumi
+    - assets/images/
+    - assets/shaders/
+    - assets/images/logo/
+    - assets/statements/
+    - licenses/ech_http/
   shaders:
     - shaders/image_enhance.frag
-# fonts:
+  fonts:
+    - family: MI_Sans_Regular
+      fonts:
+        - asset: assets/fonts/MiSans-Regular.ttf
 
 flutter_to_arch:
   name: Venera

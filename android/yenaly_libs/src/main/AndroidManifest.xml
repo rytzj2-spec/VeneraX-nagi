@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nagisaland suite：不再给整个 App 设置 networkSecurityConfig（app 模块已 usesCleartextTraffic=true）。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <activity
+            android:name=".base.dialog.YenalyCrashDialogActivity"
+            android:exported="false" />
+    </application>
+
+</manifest>
