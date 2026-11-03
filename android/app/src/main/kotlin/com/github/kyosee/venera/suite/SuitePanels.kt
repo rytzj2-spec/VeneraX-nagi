@@ -9,7 +9,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.StateListDrawable
 import android.view.Gravity
 import android.view.MotionEvent
@@ -42,30 +41,64 @@ object SuitePanels {
 
     /**
      * 开关：自己画滑块和轨道，不跟界面主题走。主界面是 Theme.Black（很老的系统主题），系统 Switch 在那里只剩一个淡淡的小点；
-     * H 是 Material 主题所以正常。现在各处都是同一个样子：开 = 粉色轨道 + 白色滑块，关 = 深灰轨道 + 灰色滑块。
+     * H 是 Material 主题所以正常。样子照 H 里的 Material 开关：细轨道 + 比轨道粗的圆滑块；
+     * 开 = 紫色滑块 + 暗紫轨道，关 = 浅灰滑块 + 深灰轨道。
      */
     @Suppress("DEPRECATION")
     private fun nagiSwitch(a: Context): Switch {
+        val box = a.dp(24f)                       // 滑块占的格子（开关总宽 = 2 格）
         val checked = intArrayOf(android.R.attr.state_checked)
-        fun track(color: Int) = GradientDrawable().apply {
-            setColor(color); cornerRadius = a.dp(14f).toFloat(); setSize(a.dp(50f), a.dp(28f))
-        }
-        fun thumb(color: Int) = InsetDrawable(GradientDrawable().apply {
-            shape = GradientDrawable.OVAL; setColor(color); setSize(a.dp(22f), a.dp(22f))
-        }, a.dp(3f))
+        fun track(color: Int) = Pill(color, box * 2, box, a.dp(14f), a.dp(6f))
+        fun thumb(color: Int) = Dot(color, box, a.dp(21f))
         return Switch(a).apply {
             trackDrawable = StateListDrawable().apply {
-                addState(checked, track(PINK))
-                addState(intArrayOf(), track(0xFF3F3F46.toInt()))
+                addState(checked, track(0xFF4A4460.toInt()))
+                addState(intArrayOf(), track(0xFF45454D.toInt()))
             }
             thumbDrawable = StateListDrawable().apply {
-                addState(checked, thumb(Color.WHITE))
-                addState(intArrayOf(), thumb(0xFFA1A1AA.toInt()))
+                addState(checked, thumb(0xFFA78BFA.toInt()))
+                addState(intArrayOf(), thumb(0xFFD4D4D8.toInt()))
             }
             showText = false
-            switchMinWidth = a.dp(50f)
+            switchMinWidth = box * 2               // 老主题的默认最小宽度很大，会把轨道拉长
             minimumHeight = a.dp(40f)
         }
+    }
+
+    /** 开关轨道：在给的范围里垂直居中画一条 [barH] 高的圆角条，左右各缩进 [insetX] */
+    private class Pill(color: Int, private val w: Int, private val h: Int, private val barH: Int, private val insetX: Int) : android.graphics.drawable.Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+        private val rect = android.graphics.RectF()
+        override fun draw(canvas: Canvas) {
+            val b = bounds
+            val cy = b.exactCenterY()
+            rect.set((b.left + insetX).toFloat(), cy - barH / 2f, (b.right - insetX).toFloat(), cy + barH / 2f)
+            canvas.drawRoundRect(rect, barH / 2f, barH / 2f, paint)
+        }
+        override fun getIntrinsicWidth() = w
+        override fun getIntrinsicHeight() = h
+        override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+        override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+    }
+
+    /** 开关滑块：在 [size] 见方的格子里居中画一个直径 [d] 的圆，带一圈淡阴影 */
+    private class Dot(color: Int, private val size: Int, private val d: Int) : android.graphics.drawable.Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+        private val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = 0x40000000 }
+        override fun draw(canvas: Canvas) {
+            val cx = bounds.exactCenterX()
+            val cy = bounds.exactCenterY()
+            canvas.drawCircle(cx, cy + d * 0.04f, d / 2f + d * 0.04f, shadow)
+            canvas.drawCircle(cx, cy, d / 2f, paint)
+        }
+        override fun getIntrinsicWidth() = size
+        override fun getIntrinsicHeight() = size
+        override fun setAlpha(alpha: Int) { paint.alpha = alpha; shadow.alpha = alpha / 4 }
+        override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
     }
 
     private fun bottomDialog(a: Activity, content: View): Dialog {

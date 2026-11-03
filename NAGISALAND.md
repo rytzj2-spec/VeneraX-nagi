@@ -163,7 +163,8 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
   **铁律**：引擎经 JNI 调用的 Java/Kotlin 回调（FlutterUiDisplayListener、MethodChannel handler、PlatformView 等）里不要改正在遍历的集合，也不要让异常抛出去。
   上面 v0.19.2 对引擎组的判断是错的：修好后引擎组、预热、Impeller 全开真机也不闪退。默认值仍是关（开关在「流畅度设置」）。
 - 「流畅度设置」「编辑底栏」的开关在主界面几乎看不见：面板是原生 Dialog，系统 `Switch` 跟界面主题走，主界面是 `Theme.Black`（很老的系统主题），
-  只剩一个淡点；H 是 Material 主题所以正常。`SuitePanels.nagiSwitch` 自己画轨道和滑块（开 = 粉色轨道 + 白滑块，关 = 深灰轨道 + 灰滑块），各处一致。
+  只剩一个淡点；H 是 Material 主题所以正常。`SuitePanels.nagiSwitch` 自己画轨道和滑块（`Pill` / `Dot`），样子照 H 里的 Material 开关：细轨道 + 比轨道粗的圆滑块，
+  开 = 紫色滑块 #A78BFA + 暗紫轨道，关 = 浅灰滑块 + 深灰轨道，各处一致。
 
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后
