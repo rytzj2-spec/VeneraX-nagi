@@ -1,5 +1,6 @@
 // ignore_for_file: library_private_types_in_public_api
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -78,6 +79,10 @@ abstract class _PlayerPlaybackController with Store {
 
   final AsyncSerialQueue _prefetchWrites = AsyncSerialQueue();
   bool _prefetchSuspendWanted = false;
+
+  /// Nagisaland suite：网络抖动类错误先不提示，过一会儿确认播放真的停下了再提示
+  Timer? _stallCheckTimer;
+  static const Duration _stallCheckDelay = Duration(seconds: 15);
 
   bool hAenable = true;
   late String hardwareDecoder;
@@ -428,6 +433,18 @@ abstract class _PlayerPlaybackController with Store {
             event,
             isBuffering: playerBuffering,
           );
+          final neverStarted =
+              playerPosition == Duration.zero && !playerPlaying;
+          if (PlayerErrorMapper.isRecoverableNetworkError(event) &&
+              !(actionableMessage != null && neverStarted)) {
+            // 网络抖动：mpv 会自己重连，只记日志；确认播放卡住了再提示
+            KazumiLogger().w(
+                'PlayerController: recoverable network error ${videoUrl()}',
+                error: event);
+            _scheduleStallCheck(
+                player, event, actionableMessage, showPlayerError);
+            return;
+          }
           if (actionableMessage != null) {
             KazumiDialog.showToast(
                 message: actionableMessage, showActionButton: true);
@@ -456,6 +473,11 @@ abstract class _PlayerPlaybackController with Store {
         }
       }
 
+      await _applyNetworkResilience(pp);
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
+      }
+
       await player.open(
         Media(videoUrl(),
             start: Duration(seconds: offset), httpHeaders: httpHeaders),
@@ -479,6 +501,72 @@ abstract class _PlayerPlaybackController with Store {
       await candidate.dispose();
       Error.throwWithStackTrace(error, stackTrace);
     }
+  }
+
+  /// Nagisaland suite：调大网络超时，并让 ffmpeg 在网络错误（如 ETIMEDOUT）后自动重连，
+  /// 而不是直接把流当成结束。HTTP 直链走 stream-lavf-o，HLS 分片走 demuxer-lavf-o。
+  Future<void> _applyNetworkResilience(NativePlayer pp) async {
+    if (isLocalPlayback()) {
+      return;
+    }
+    const reconnectOptions = [
+      'reconnect=1',
+      'reconnect_streamed=1',
+      'reconnect_on_network_error=1',
+      'reconnect_delay_max=30',
+    ];
+    try {
+      await pp.setProperty('network-timeout', '120');
+      for (final option in reconnectOptions) {
+        await pp.command(['change-list', 'stream-lavf-o', 'add', option]);
+        await pp.command(['change-list', 'demuxer-lavf-o', 'add', option]);
+      }
+    } catch (e) {
+      KazumiLogger()
+          .w('PlayerController: failed to apply network options', error: e);
+    }
+  }
+
+  /// 网络错误后 [_stallCheckDelay] 再看一次：进度没动，并且一直在缓冲或提前播完了，才提示。
+  void _scheduleStallCheck(
+    Player player,
+    Object error,
+    String? actionableMessage,
+    bool showPlayerError,
+  ) {
+    if (_stallCheckTimer?.isActive ?? false) {
+      return;
+    }
+    final startPosition = playerPosition;
+    _stallCheckTimer = Timer(_stallCheckDelay, () {
+      _stallCheckTimer = null;
+      if (!isCurrentPlayer(player)) {
+        return;
+      }
+      final position = playerPosition;
+      if (position > startPosition) {
+        KazumiLogger().i(
+            'PlayerController: playback recovered after network error (${position.inSeconds}s)');
+        return;
+      }
+      final duration = playerDuration;
+      final endedEarly = playerCompleted &&
+          duration > Duration.zero &&
+          position < duration - const Duration(seconds: 5);
+      final stuck = playerBuffering || endedEarly;
+      if (!stuck) {
+        // 用户自己暂停了之类，不打扰
+        return;
+      }
+      final detail = showPlayerError ? '\n$error' : '';
+      KazumiDialog.showToast(
+        message: (actionableMessage ?? '网络不稳定，视频加载卡住了，可以稍等或更换视频来源') + detail,
+        duration: const Duration(seconds: 5),
+        showActionButton: true,
+      );
+      KazumiLogger().e('PlayerController: playback stalled after network error ${videoUrl()}',
+          error: error);
+    });
   }
 
   Future<void> setShader(SuperResolutionMode mode, {Player? player}) async {
@@ -615,6 +703,8 @@ abstract class _PlayerPlaybackController with Store {
   }
 
   Future<void> stop() async {
+    _stallCheckTimer?.cancel();
+    _stallCheckTimer = null;
     cachePolicy.stopWatching();
     final ownedPlayer = _ownedPlayer;
     _ownedPlayer = null;

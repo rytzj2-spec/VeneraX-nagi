@@ -167,6 +167,7 @@ class VideoWebviewAndroidImpl
       scripts.add(UserScript(
         source: jsBridgeDebugScript,
         injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        forMainFrameOnly: false,
       ));
     } else {
       logEventController.add('Adding VideoBridgeDebug UserScripts');
@@ -262,10 +263,12 @@ class VideoWebviewAndroidImpl
       scripts.add(UserScript(
         source: blobParserScript,
         injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        forMainFrameOnly: false,
       ));
       scripts.add(UserScript(
         source: videoTagParserScript,
         injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        forMainFrameOnly: false,
       ));
     }
 

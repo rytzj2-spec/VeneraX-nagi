@@ -250,6 +250,7 @@ if (!_checkForCaptcha()) {
         UserScript(
           source: script,
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+          forMainFrameOnly: false,
         ),
       ],
     );
@@ -346,6 +347,7 @@ $script
         UserScript(
           source: source,
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+          forMainFrameOnly: false,
         ),
       ],
     );
@@ -412,6 +414,7 @@ if (!_checkAndClick()) {
         UserScript(
           source: script,
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+          forMainFrameOnly: false,
         ),
       ],
     );
