@@ -17,6 +17,7 @@ import 'package:kazumi/modules/danmaku/danmaku_episode_response.dart';
 import 'package:kazumi/modules/danmaku/danmaku_search_response.dart';
 import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
+import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 
@@ -111,6 +112,8 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
   String? _animeTitle;
   int? _segmentStart;
   String? _error;
+  // Nagisaland：失败的具体原因（没有凭据、403、超时…），显示在标题下面
+  String? _errorDetail;
   bool _loading = false;
   bool _hasMore = false;
 
@@ -140,6 +143,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
     setState(() {
       _loading = true;
       _error = null;
+      _errorDetail = null;
       _step = _SourceStep.anime;
       _animes = const [];
       if (recordSearch) {
@@ -172,6 +176,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
       setState(() {
         _loading = false;
         _error = '搜索失败';
+        _errorDetail = _describe(error);
       });
     }
   }
@@ -180,6 +185,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
     setState(() {
       _loading = true;
       _error = null;
+      _errorDetail = null;
       _animeTitle = anime.animeTitle;
       _step = _SourceStep.episode;
       _episodes = const [];
@@ -202,6 +208,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
       setState(() {
         _loading = false;
         _error = '分集加载失败';
+        _errorDetail = _describe(error);
       });
     }
   }
@@ -288,6 +295,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
   void _goBack() {
     setState(() {
       _error = null;
+      _errorDetail = null;
       _step =
           _step == _SourceStep.episode ? _SourceStep.anime : _SourceStep.search;
     });
@@ -448,6 +456,17 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
   }
 
   Widget _buildAnimeList() {
+    if (_error != null && _errorDetail != null) {
+      return GeneralErrorWidget(
+        compact: true,
+        icon: Icons.search_off,
+        title: _error!,
+        errMsg: _errorDetail!,
+        actions: [
+          StateActionButton.tonal(onPressed: _goBack, text: '返回搜索'),
+        ],
+      );
+    }
     if (_error != null) {
       return GeneralEmptyState(
         compact: true,
@@ -507,7 +526,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
         compact: true,
         icon: Icons.subtitles_off_outlined,
         title: _error!,
-        errMsg: '',
+        errMsg: _errorDetail ?? '',
         actions: [StateActionButton.tonal(onPressed: _goBack, text: '返回番剧')],
       );
     }
@@ -821,4 +840,11 @@ class _SegmentChip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Nagisaland：把弹幕接口的异常变成给人看的一句话
+String _describe(Object error) {
+  if (error is NetworkException) return error.message;
+  final text = error.toString();
+  return text.length > 200 ? '${text.substring(0, 200)}…' : text;
 }

@@ -30,8 +30,9 @@ import java.util.concurrent.Executors
  *
  * v0.19.2：v0.19.1 改成从同一个 [FlutterEngineGroup] 建以后真机频繁闪退（原生层，SuiteCrashLog 抓不到；perf.txt 里
  * 引擎在同一次切换后反复「新建」= 进程崩了重启）。引擎组里后建的引擎是从第一个 spawn 出来的，和它共用 UI / 渲染 / IO
- * 线程和 GPU 资源上下文，多个引擎同时活着时最可疑。所以默认回到 v0.19.0 的方式：每个分区一个独立的 FlutterEngine，
- * 漫画引擎随漫画界面建、随界面销毁。引擎组和后台预热都改成「流畅度设置」里的实验开关，默认关；出任何异常都退回普通建引擎，
+ * 线程和 GPU 资源上下文，多个引擎同时活着时最可疑。所以v0.19.2 曾默认回到 v0.19.0 的方式（独立引擎），
+ * 后来查明闪退是 SuitePerf 首帧监听的问题（b03dc2b），v0.19.4 起引擎组和后台预热又默认开（「流畅度设置」里可关）。关掉时：每个分区一个独立的 FlutterEngine，
+ * 漫画引擎随漫画界面建、随界面销毁。不管开没开，出任何异常都退回普通建引擎，
  * 异常写进 内部存储/Nagisaland/debug/perf.txt。
  *
  * Impeller：以前在 manifest 里写死关闭（Kazumi 的 media_kit 按原项目用 Skia）。现在由这里在进程一启动就决定，
@@ -42,7 +43,7 @@ object SuiteEngines {
     private const val PREFS = "suite_perf"
     const val COMIC_ID = "nagi_comic_engine"
 
-    // v0.19.2 换了键名：v0.19.1 时默认开的设置不带过来，统一从「关」开始
+    // v0.19.2 换了键名（当时默认关）；v0.19.4 起默认开：闪退的真正原因是 SuitePerf 的首帧监听（b03dc2b 已修），不是引擎组
     private const val KEY_GROUP = "engine_group_v2"
     private const val KEY_PREWARM = "prewarm_v2"
 
@@ -50,11 +51,11 @@ object SuiteEngines {
 
     fun impellerEnabled(ctx: Context) = prefs(ctx).getBoolean("impeller", false)
     fun setImpeller(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("impeller", on).apply()
-    fun prewarmEnabled(ctx: Context) = prefs(ctx).getBoolean(KEY_PREWARM, false)
+    fun prewarmEnabled(ctx: Context) = prefs(ctx).getBoolean(KEY_PREWARM, true)
     fun setPrewarm(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean(KEY_PREWARM, on).apply()
 
     /** 设置里的「共享引擎组」开关（改了要完全退出再开才生效） */
-    fun groupSetting(ctx: Context) = prefs(ctx).getBoolean(KEY_GROUP, false)
+    fun groupSetting(ctx: Context) = prefs(ctx).getBoolean(KEY_GROUP, true)
     fun setGroup(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean(KEY_GROUP, on).apply()
 
     /** 本进程实际用不用引擎组：第一次问的时候定下来，进程内不再变（不能一半引擎在组里、一半不在） */

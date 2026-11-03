@@ -166,6 +166,14 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
   只剩一个淡点；H 是 Material 主题所以正常。`SuitePanels.nagiSwitch` 自己画轨道和滑块（`Pill` / `Dot`），样子照 H 里的 Material 开关：细轨道 + 比轨道粗的圆滑块，
   开 = 紫色滑块 #A78BFA + 暗紫轨道，关 = 浅灰滑块 + 深灰轨道，各处一致。
 
+## 2026-11-04 v0.19.4（versionCode 54）
+- 「流畅度设置」的后台预热、共享引擎组改回**默认开**（键名还是 `prewarm_v2` / `engine_group_v2`，已经手动设过的保持原样）。
+- 弹幕「选择番剧」只写「搜索失败」看不出原因：
+  - 弹弹play 接口不带凭据一定 403（响应头 `X-Error-Message: Missing Authentication Headers`）。凭据只能编译时 `--dart-define` 传入
+    （`DANDANAPI_APPID` / `DANDANAPI_KEY`，本地放 `dart_defines.txt`，**没有这个文件时编译命令里的参数要去掉，弹幕就没法用**）。
+  - `DanmakuClient`：没凭据直接抛「没有弹弹play 凭据…」；服务器拒绝时带状态码和 `X-Error-Message`（401/403 提示检查凭据和手机时间）。
+  - `danmaku_source_sheet.dart`：搜索 / 分集失败时标题下面显示具体原因（`_errorDetail`）。
+
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后
 `flutter build apk --release --target-platform android-arm64 --dart-define-from-file=dart_defines.txt`（没有 dart_defines.txt 就去掉这个参数）。
