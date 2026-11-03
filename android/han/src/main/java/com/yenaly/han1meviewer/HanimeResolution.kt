@@ -47,7 +47,11 @@ class HanimeResolution {
             RES_720P -> resArray[1] = RES_720P to link
             RES_480P -> resArray[2] = RES_480P to link
             RES_240P -> resArray[3] = RES_240P to link
-            null -> resArray[4] = RES_UNKNOWN to link
+            // Nagisaland suite：没有 size 属性（"P"）或其它分辨率时也保留，原来会被直接丢掉导致没有播放地址
+            else -> if (resArray[4] == null) {
+                val label = resString?.takeIf { Regex("""\d+P""").matches(it) } ?: RES_UNKNOWN
+                resArray[4] = label to link
+            }
         }
     }
 

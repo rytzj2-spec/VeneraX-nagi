@@ -47,7 +47,10 @@ fun getHanimeShareText(title: String, videoCode: String): String = buildString {
 fun getHanimeVideoDownloadLink(videoCode: String) =
     HANIME_BASE_URL + "download?v=" + videoCode
 
-val videoUrlRegex = Regex("""hanime1\.(?:com|me)/watch\?v=(\d+)""")
+// Nagisaland suite：和 misaka10032w/Han1meViewer 一样放宽：任意域名（镜像站）和相对链接都认
+val videoUrlRegex = Regex(
+    """(?:(?:https?:)?//[^\s"'<>/]+|(?:hanime(?:1|one)|javchu)\.(?:com|me))?(?:/[^/?#\s"'<>]+)*/watch\?(?:[^#\s"'<>]*&)?v=(\d+)"""
+)
 
 fun String.toVideoCode() = videoUrlRegex.find(this)?.groupValues?.get(1)
 

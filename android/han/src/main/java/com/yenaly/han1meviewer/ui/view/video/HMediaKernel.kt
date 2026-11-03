@@ -86,6 +86,8 @@ class ExoMediaKernel(jzvd: Jzvd) : JZMediaInterface(jzvd), Player.Listener, HMed
 
     companion object {
         const val TAG = "ExoMediaKernel"
+        private const val MEDIA_CDN_HOST = "vdownload.hembed.com"
+        private const val BACKUP_MEDIA_CDN_HOST = "1497203185.rsc.cdn77.org"
     }
 
     private var _exoPlayer: ExoPlayer? = null
@@ -97,6 +99,20 @@ class ExoMediaKernel(jzvd: Jzvd) : JZMediaInterface(jzvd), Player.Listener, HMed
 
     private var callback: Runnable? = null
     private var prevSeek = 0L
+
+    // Nagisaland suite：主 CDN（vdownload.hembed.com）在部分网络下连不上，出错时换备用 CDN 重试一次
+    // （备用地址来自 misaka10032w/Han1meViewer 的「备用媒体 CDN」选项）
+    private var dataSourceFactory: DefaultDataSource.Factory? = null
+    private var triedBackupCdn = false
+
+    private fun buildSource(url: String): androidx.media3.exoplayer.source.MediaSource {
+        val factory = dataSourceFactory!!
+        return if (url.contains(".m3u8")) {
+            HlsMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(url))
+        } else {
+            ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(url))
+        }
+    }
 
     @OptIn(UnstableApi::class)
     override fun prepare() {
@@ -135,20 +151,19 @@ class ExoMediaKernel(jzvd: Jzvd) : JZMediaInterface(jzvd), Player.Listener, HMed
                 }
 
             // Produces DataSource instances through which media data is loaded.
-            val dataSourceFactory = DefaultDataSource.Factory(
+            dataSourceFactory = DefaultDataSource.Factory(
                 context,
                 DefaultHttpDataSource.Factory()
                     .setDefaultRequestProperties(jzvd.jzDataSource.headerMap)
+                    // CDN 会在 http / https 之间跳转，默认不允许会直接报错
+                    .setAllowCrossProtocolRedirects(true)
+                    .setConnectTimeoutMs(20_000)
+                    .setReadTimeoutMs(30_000)
             )
+            triedBackupCdn = false
 
             val currUrl = jzvd.jzDataSource.currentUrl.toString()
-            val videoSource = if (currUrl.contains(".m3u8")) {
-                HlsMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(currUrl))
-            } else {
-                ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(currUrl))
-            }
+            val videoSource = buildSource(currUrl)
 
             Log.e(TAG, "URL Link = $currUrl")
 
@@ -346,7 +361,25 @@ class ExoMediaKernel(jzvd: Jzvd) : JZMediaInterface(jzvd), Player.Listener, HMed
     }
 
     override fun onPlayerError(error: PlaybackException) {
-        Log.e(TAG, "onPlayerError: $error")
+        Log.e(TAG, "onPlayerError: $error", error)
+        val player = _exoPlayer
+        val url = jzvd.jzDataSource?.currentUrl?.toString().orEmpty()
+        if (player != null && dataSourceFactory != null && !triedBackupCdn &&
+            url.contains(MEDIA_CDN_HOST, ignoreCase = true)
+        ) {
+            triedBackupCdn = true
+            val backup = url.replace(MEDIA_CDN_HOST, BACKUP_MEDIA_CDN_HOST, ignoreCase = true)
+            val position = player.currentPosition.coerceAtLeast(0)
+            Log.w(TAG, "retry with backup CDN at $position: $backup")
+            try {
+                player.setMediaSource(buildSource(backup), position)
+                player.prepare()
+                player.playWhenReady = true
+                return
+            } catch (e: Exception) {
+                Log.e(TAG, "backup CDN retry failed", e)
+            }
+        }
         handler?.post { jzvd.onError(1000, 1000) }
     }
 
