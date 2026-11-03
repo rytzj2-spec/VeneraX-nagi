@@ -150,45 +150,125 @@ class _ServerEditor extends StatefulWidget {
   State<_ServerEditor> createState() => _ServerEditorState();
 }
 
+/// 添加 / 修改服务器（参考 Hills）：① 类型、地址、端口 →「测试连接」看到服务器名和版本 ② 用户名、密码 → 登录
 class _ServerEditorState extends State<_ServerEditor> {
-  late final url = TextEditingController(text: widget.existing?.url ?? '');
-  late final user = TextEditingController(text: widget.existing?.username ?? '');
+  final address = TextEditingController();
+  final port = TextEditingController();
+  final user = TextEditingController();
   final pass = TextEditingController();
+  final name = TextEditingController();
   ServerKind? kind; // null = 自动识别
+  bool https = false;
   bool busy = false;
+  bool showPass = false;
   String? error;
+  ServerProbe? probed;
 
   @override
   void initState() {
     super.initState();
-    kind = widget.existing?.kind;
+    final e = widget.existing;
+    if (e != null) {
+      kind = e.kind;
+      final uri = Uri.tryParse(e.url);
+      if (uri != null && uri.host.isNotEmpty) {
+        https = uri.scheme == 'https';
+        address.text = uri.host + (uri.path.isEmpty || uri.path == '/' ? '' : uri.path);
+        if (uri.hasPort) port.text = '${uri.port}';
+      } else {
+        address.text = e.url;
+      }
+      user.text = e.username;
+      name.text = e.name;
+    }
+    address.addListener(_syncScheme);
+  }
+
+  /// 地址里直接写了 http:// 或 https:// 就跟着切；写了 :端口 就挪到端口框
+  void _syncScheme() {
+    var t = address.text.trim();
+    final lower = t.toLowerCase();
+    if (lower.startsWith('https://') || lower.startsWith('http://')) {
+      final h = lower.startsWith('https://');
+      t = t.substring(h ? 8 : 7);
+      final m = RegExp(r'^([^/:]+):(\d+)(.*)$').firstMatch(t);
+      if (m != null) {
+        port.text = m.group(2)!;
+        t = '${m.group(1)}${m.group(3)}';
+      }
+      address.value = TextEditingValue(text: t, selection: TextSelection.collapsed(offset: t.length));
+      setState(() {
+        https = h;
+        probed = null;
+      });
+    } else if (probed != null) {
+      setState(() => probed = null);
+    }
   }
 
   @override
   void dispose() {
-    url.dispose();
-    user.dispose();
-    pass.dispose();
+    for (final c in [address, port, user, pass, name]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  String _base() {
+    var a = address.text.trim();
+    // 地址里写了 host:port（没写协议）也认
+    final m = RegExp(r'^([^/:]+):(\d+)(.*)$').firstMatch(a);
+    var p = port.text.trim();
+    if (m != null) {
+      if (p.isEmpty) p = m.group(2)!;
+      a = '${m.group(1)}${m.group(3)}';
+    }
+    return EmbyApi.buildBase('${https ? 'https' : 'http'}://$a', p);
+  }
+
+  Future<ServerProbe?> _probe() async {
     if (kind == ServerKind.fnos) {
       setState(() => error = '飞牛影视的接口还没接入（确认接口后再加）');
+      return null;
+    }
+    setState(() {
+      busy = true;
+      error = null;
+      probed = null;
+    });
+    try {
+      final r = await EmbyApi.probe(_base(), kind: kind, deviceId: widget.existing?.deviceId);
+      if (mounted) {
+        setState(() => probed = r);
+        if (name.text.trim().isEmpty) name.text = r.name;
+      }
+      return r;
+    } catch (e) {
+      if (mounted) setState(() => error = EmbyApi.describeError(e));
+      return null;
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _login() async {
+    if (user.text.trim().isEmpty) {
+      setState(() => error = '用户名必填');
       return;
     }
+    final p = probed ?? await _probe();
+    if (p == null) return;
     setState(() {
       busy = true;
       error = null;
     });
     try {
       final s = await EmbyApi.login(
-        url: url.text,
-        username: user.text.trim(),
+        probe: p,
+        username: user.text,
         password: pass.text,
-        kind: kind,
         localId: widget.existing?.id,
-        deviceId: widget.existing?.deviceId,
+        displayName: name.text,
       );
       await VideoStore.instance.upsert(s);
       if (mounted) Navigator.pop(context);
@@ -200,8 +280,9 @@ class _ServerEditorState extends State<_ServerEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final p = probed;
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Text(widget.existing == null ? '添加服务器' : '修改服务器', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
@@ -214,30 +295,91 @@ class _ServerEditorState extends State<_ServerEditor> {
               ButtonSegment(value: ServerKind.fnos, label: Text('飞牛')),
             ],
             selected: {kind},
-            onSelectionChanged: (v) => setState(() => kind = v.first),
+            onSelectionChanged: (v) => setState(() {
+              kind = v.first;
+              probed = null;
+            }),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: url,
-            keyboardType: TextInputType.url,
-            decoration: const InputDecoration(labelText: '地址', hintText: 'http://192.168.1.10:8096', border: OutlineInputBorder()),
-          ),
+          Row(children: [
+            SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: const [ButtonSegment(value: false, label: Text('http')), ButtonSegment(value: true, label: Text('https'))],
+              selected: {https},
+              onSelectionChanged: (v) => setState(() {
+                https = v.first;
+                probed = null;
+              }),
+            ),
+          ]),
           const SizedBox(height: 10),
-          TextField(controller: user, decoration: const InputDecoration(labelText: '用户名', border: OutlineInputBorder())),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(
+              flex: 3,
+              child: TextField(
+                controller: address,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                decoration: const InputDecoration(labelText: '地址', hintText: '192.168.1.10 或 emby.example.com', border: OutlineInputBorder()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 1,
+              child: TextField(
+                controller: port,
+                keyboardType: TextInputType.number,
+                onChanged: (_) => setState(() => probed = null),
+                decoration: const InputDecoration(labelText: '端口', hintText: '8096', border: OutlineInputBorder()),
+              ),
+            ),
+          ]),
+          const Padding(
+            padding: EdgeInsets.only(top: 4, left: 4),
+            child: Text('端口留空 = http 80 / https 443；Emby / Jellyfin 默认是 8096（https 8920）',
+                style: TextStyle(color: NagiColors.muted, fontSize: 11.5)),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: busy ? null : _probe,
+            icon: const Icon(Icons.wifi_tethering, size: 18),
+            label: const Text('测试连接'),
+          ),
+          if (p != null)
+            Card(
+              margin: const EdgeInsets.only(top: 8),
+              child: ListTile(
+                leading: const Icon(Icons.check_circle, color: NagiColors.violet),
+                title: Text(p.name),
+                subtitle: Text('${p.product} ${p.version}\n${p.base}'),
+                isThreeLine: true,
+              ),
+            ),
+          const SizedBox(height: 12),
+          TextField(controller: user, autocorrect: false, decoration: const InputDecoration(labelText: '用户名（必填）', border: OutlineInputBorder())),
           const SizedBox(height: 10),
           TextField(
             controller: pass,
-            obscureText: true,
-            onSubmitted: (_) => _submit(),
-            decoration: const InputDecoration(labelText: '密码（没有就留空）', border: OutlineInputBorder()),
+            obscureText: !showPass,
+            onSubmitted: (_) => _login(),
+            decoration: InputDecoration(
+              labelText: '密码（没有就留空）',
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                icon: Icon(showPass ? Icons.visibility_off : Icons.visibility),
+                onPressed: () => setState(() => showPass = !showPass),
+              ),
+            ),
           ),
+          const SizedBox(height: 10),
+          TextField(controller: name, decoration: const InputDecoration(labelText: '显示名称（可选，默认用服务器名）', border: OutlineInputBorder())),
           if (error != null) ...[
             const SizedBox(height: 10),
-            Text(error!, style: const TextStyle(color: Color(0xFFF87171))),
+            SelectableText(error!, style: const TextStyle(color: Color(0xFFF87171))),
           ],
           const SizedBox(height: 14),
           FilledButton(
-            onPressed: busy ? null : _submit,
+            onPressed: busy ? null : _login,
             child: busy
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Text('登录'),

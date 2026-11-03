@@ -22,6 +22,9 @@ import com.yenaly.yenaly_libs.utils.applicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import okhttp3.ResponseBody
@@ -316,7 +319,7 @@ object NetworkRepo {
         emit(WebsiteState.Loading)
         val versionInfo = HUpdater.checkForUpdate(forceCheck)
         emit(WebsiteState.Success(versionInfo))
-    }.catch { e ->
+    }.cfRetry().catch { e ->
         when (e) {
             is CancellationException -> throw e
             else -> {
@@ -348,7 +351,7 @@ object NetworkRepo {
             // 雙重保險
             emit(WebsiteState.Error(IllegalStateException(getString(R.string.account_or_password_wrong))))
         }
-    }.catch { e ->
+    }.cfRetry().catch { e ->
         emit(WebsiteState.Error(handleException(e)))
     }.flowOn(Dispatchers.IO)
 
@@ -357,6 +360,17 @@ object NetworkRepo {
      *
      * @param permittedSuccessCode 用于处理特殊情况，比如[NetworkRepo.modifyPlaylist]需要302成功
      */
+    /**
+     * Nagisaland：hanime1 的 Cloudflare 验证页（403 + "Just a moment"）是不定时出现的，刷新几次就过去了。
+     * 遇到时自动静默重试 3 次（1.2 / 2.4 / 3.6 秒后），都不行才显示「网站被加固」。IP 被封（IPBlockedException）不重试。
+     */
+    private fun <T> Flow<T>.cfRetry(): Flow<T> = retryWhen { cause, attempt ->
+        if (cause is CloudFlareBlockedException && cause !is IPBlockedException && attempt < 3) {
+            delay(1200L * (attempt + 1))
+            true
+        } else false
+    }
+
     private fun <T> websiteIOFlow(
         request: suspend () -> Response<ResponseBody>,
         permittedSuccessCode: IntArray? = null,
@@ -370,7 +384,7 @@ object NetworkRepo {
         } else {
             requestResult.throwRequestException()
         }
-    }.catch { e ->
+    }.cfRetry().catch { e ->
         emit(WebsiteState.Error(handleException(e)))
     }.flowOn(Dispatchers.IO)
 
@@ -388,7 +402,7 @@ object NetworkRepo {
         } else {
             requestResult.throwRequestException()
         }
-    }.catch { e ->
+    }.cfRetry().catch { e ->
         emit(PageLoadingState.Error(handleException(e)))
     }.flowOn(Dispatchers.IO)
 
@@ -406,7 +420,7 @@ object NetworkRepo {
         } else {
             requestResult.throwRequestException()
         }
-    }.catch { e ->
+    }.cfRetry().catch { e ->
         emit(VideoLoadingState.Error(handleException(e)))
     }.flowOn(Dispatchers.IO)
 

@@ -144,6 +144,17 @@ class ExternalSubtitle {
   ExternalSubtitle(this.url, this.title, this.language);
 }
 
+/// 「测试连接」的结果
+class ServerProbe {
+  final String base; // 实际能用的基础地址（可能自动加了 /emby）
+  final ServerKind kind;
+  final String name;
+  final String version;
+  final String product;
+  final String deviceId;
+  ServerProbe({required this.base, required this.kind, required this.name, required this.version, required this.product, required this.deviceId});
+}
+
 class EmbyException implements Exception {
   final String message;
   EmbyException(this.message);
@@ -172,23 +183,47 @@ class EmbyApi {
     return u;
   }
 
-  static String _authValue(String deviceId, String? token) {
-    final b = StringBuffer('MediaBrowser Client="$clientName", Device="Android", DeviceId="$deviceId", Version="$clientVersion"');
+  /// 地址 + 端口 → 基础地址。端口框留空：用地址里写的端口（没写就是 http 80 / https 443）
+  static String buildBase(String address, String port) {
+    final u = normalizeUrl(address);
+    if (u.isEmpty) return u;
+    final p = port.trim();
+    final uri = Uri.tryParse(u);
+    if (uri == null || uri.host.isEmpty) throw EmbyException('地址格式不对：$address');
+    if (p.isEmpty) return u;
+    final n = int.tryParse(p);
+    if (n == null || n <= 0 || n > 65535) throw EmbyException('端口要是 1~65535 的数字');
+    final b = normalizeUrl(uri.replace(port: n).toString());
+    return b;
+  }
+
+  /// Emby 用 `Emby …`，Jellyfin 用 `MediaBrowser …`（Jellyfin 新版只认 Authorization 头，Emby 认 X-Emby-Authorization）
+  static String _authValue(ServerKind kind, String deviceId, String? token) {
+    final scheme = kind == ServerKind.jellyfin ? 'MediaBrowser' : 'Emby';
+    final b = StringBuffer('$scheme Client="$clientName", Device="Android", DeviceId="$deviceId", Version="$clientVersion"');
     if (token != null && token.isNotEmpty) b.write(', Token="$token"');
     return b.toString();
   }
 
-  static Map<String, String> _headers(String deviceId, String? token) {
-    final v = _authValue(deviceId, token);
-    // Jellyfin 新版只认 Authorization，Emby 认 X-Emby-Authorization；两个都带
+  static Map<String, String> _headers(ServerKind kind, String deviceId, String? token) {
+    final v = _authValue(kind, deviceId, token);
     return {
-      'Authorization': v,
+      // Emby 不发 Authorization 头：前面有反代（nginx / Cloudflare）时，不认识的 Authorization 可能被直接打回 400
+      if (kind == ServerKind.jellyfin) 'Authorization': v,
       'X-Emby-Authorization': v,
       if (token != null && token.isNotEmpty) 'X-Emby-Token': token,
-      if (token != null && token.isNotEmpty) 'X-MediaBrowser-Token': token,
+      if (token != null && token.isNotEmpty && kind == ServerKind.jellyfin) 'X-MediaBrowser-Token': token,
       'Accept': 'application/json',
     };
   }
+
+  /// Emby 网页版的做法：客户端信息同时放在地址参数里（有的反代会去掉自定义请求头）
+  static Map<String, String> _authQuery(String deviceId) => {
+        'X-Emby-Client': clientName,
+        'X-Emby-Device-Name': 'Android',
+        'X-Emby-Device-Id': deviceId,
+        'X-Emby-Client-Version': clientVersion,
+      };
 
   static Dio _dio(String baseUrl, Map<String, String> headers) => Dio(BaseOptions(
         baseUrl: baseUrl,
@@ -198,63 +233,109 @@ class EmbyApi {
         responseType: ResponseType.json,
       ));
 
-  Dio get _client => _dio(server.url, _headers(server.deviceId, server.token));
+  Dio get _client => _dio(server.url, _headers(server.kind, server.deviceId, server.token));
+
+  /// 服务器返回的出错内容（JSON 的 Message / error，或者网页正文前 200 字）
+  static String _body(Response? r) {
+    if (r == null) return '';
+    final d = r.data;
+    String text;
+    if (d is Map) {
+      text = '${d['Message'] ?? d['message'] ?? d['error'] ?? d['title'] ?? d['detail'] ?? jsonEncode(d)}';
+    } else {
+      text = '${d ?? ''}';
+      text = text.replaceAll(RegExp(r'<[^>]+>'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    }
+    if (text.length > 200) text = '${text.substring(0, 200)}…';
+    return text;
+  }
 
   static String describeError(Object e) {
     if (e is EmbyException) return e.message;
     if (e is DioException) {
       final code = e.response?.statusCode;
-      if (code == 401) return '用户名或密码不对（或登录已过期，请重新登录）';
-      if (code != null) return '服务器返回 $code';
+      final body = _body(e.response);
+      final detail = body.isEmpty ? '' : '\n服务器说：$body';
+      if (code == 401) return '用户名或密码不对（或登录已过期，请重新登录）$detail';
+      if (code == 404) return '找不到接口（404）：地址对吗？Emby 有时要在地址后面加 /emby$detail';
+      if (code != null) return '服务器返回 $code$detail';
       return switch (e.type) {
         DioExceptionType.connectionTimeout => '连接超时：地址 / 端口对吗？手机能访问到服务器吗？',
         DioExceptionType.receiveTimeout => '服务器响应太慢',
-        DioExceptionType.connectionError => '连不上服务器：${e.message ?? ''}',
-        _ => e.message ?? e.toString(),
+        DioExceptionType.badCertificate => 'HTTPS 证书不受信任（自签名证书？试试用 http 地址）',
+        DioExceptionType.connectionError => '连不上服务器：${e.message ?? e.error ?? ''}\n（http / https 选对了吗？端口对吗？）',
+        _ => e.message ?? e.error?.toString() ?? e.toString(),
       };
     }
     return e.toString();
   }
 
-  /// 登录：先读 /System/Info/Public 认是 Emby 还是 Jellyfin，再用户名密码换令牌
-  static Future<MediaServer> login({
-    required String url,
-    required String username,
-    required String password,
-    ServerKind? kind,
-    String? localId,
-    String? deviceId,
-  }) async {
-    final base = normalizeUrl(url);
+  /// 测试连接：读 /System/Info/Public（不用登录），认出是 Emby 还是 Jellyfin；
+  /// 直接访问不行时再试加 /emby 前缀（Emby 的老路径）
+  static Future<ServerProbe> probe(String base, {ServerKind? kind, String? deviceId}) async {
     if (base.isEmpty) throw EmbyException('请填服务器地址');
     final dev = deviceId ?? newDeviceId();
-    final anon = _dio(base, _headers(dev, null));
-    String name = base;
-    var k = kind ?? ServerKind.emby;
-    try {
-      final info = (await anon.get('/System/Info/Public')).data;
-      if (info is Map) {
-        name = (info['ServerName'] as String?)?.trim().isNotEmpty == true ? info['ServerName'] : base;
-        final product = '${info['ProductName'] ?? ''}'.toLowerCase();
-        if (kind == null) k = product.contains('jellyfin') ? ServerKind.jellyfin : ServerKind.emby;
+    final candidates = [base, if (!base.toLowerCase().endsWith('/emby')) '$base/emby'];
+    Object? firstError;
+    for (final c in candidates) {
+      try {
+        final r = await _dio(c, _headers(kind ?? ServerKind.emby, dev, null))
+            .get('/System/Info/Public', options: Options(responseType: ResponseType.json));
+        final info = r.data;
+        if (info is! Map || (info['Id'] == null && info['ServerName'] == null)) {
+          throw EmbyException('这个地址不像 Emby / Jellyfin 服务器（/System/Info/Public 返回的不是服务器信息）');
+        }
+        final product = '${info['ProductName'] ?? ''}';
+        final k = kind ?? (product.toLowerCase().contains('jellyfin') ? ServerKind.jellyfin : ServerKind.emby);
+        final name = '${info['ServerName'] ?? ''}'.trim();
+        return ServerProbe(
+          base: c,
+          kind: k,
+          name: name.isEmpty ? Uri.parse(c).host : name,
+          version: '${info['Version'] ?? ''}',
+          product: product.isEmpty ? kindLabel(k) : product,
+          deviceId: dev,
+        );
+      } catch (e) {
+        firstError ??= e;
+        // 连接层面的错误（连不上 / 超时 / 证书）换前缀也没用
+        if (e is DioException && e.response == null) break;
       }
-    } catch (e) {
-      throw EmbyException('连不上服务器：${describeError(e)}');
     }
-    final r = await anon.post('/Users/AuthenticateByName', data: {'Username': username, 'Pw': password, 'Password': password});
-    final d = r.data as Map;
+    throw EmbyException('连不上服务器：${describeError(firstError!)}');
+  }
+
+  /// 用户名密码换令牌（密码不保存）
+  static Future<MediaServer> login({
+    required ServerProbe probe,
+    required String username,
+    required String password,
+    String? localId,
+    String? displayName,
+  }) async {
+    final user = username.trim();
+    if (user.isEmpty) throw EmbyException('用户名必填（Emby / Jellyfin 都不能空着用户名登录）');
+    final dio = _dio(probe.base, _headers(probe.kind, probe.deviceId, null));
+    final r = await dio.post(
+      '/Users/AuthenticateByName',
+      queryParameters: probe.kind == ServerKind.emby ? _authQuery(probe.deviceId) : null,
+      data: jsonEncode({'Username': user, 'Pw': password}),
+      options: Options(contentType: Headers.jsonContentType),
+    );
+    final d = r.data is String ? jsonDecode(r.data as String) : r.data;
+    if (d is! Map) throw EmbyException('登录失败：服务器返回的不是 JSON');
     final token = d['AccessToken'] as String?;
-    final user = d['User'] as Map?;
-    if (token == null || user == null) throw EmbyException('登录失败：服务器没有返回令牌');
+    final u = d['User'] as Map?;
+    if (token == null || u == null) throw EmbyException('登录失败：服务器没有返回令牌');
     return MediaServer(
       id: localId ?? newDeviceId(),
-      kind: k,
-      name: name,
-      url: base,
-      username: username,
-      userId: user['Id'],
+      kind: probe.kind,
+      name: (displayName?.trim().isNotEmpty ?? false) ? displayName!.trim() : probe.name,
+      url: probe.base,
+      username: user,
+      userId: '${u['Id']}',
       token: token,
-      deviceId: dev,
+      deviceId: probe.deviceId,
     );
   }
 
