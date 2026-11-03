@@ -119,7 +119,7 @@ class ServersTab extends StatelessWidget {
           label: const Text('添加服务器'),
         ),
         body: store.servers.isEmpty
-            ? const EmptyView('还没有服务器\n点右下角添加 Emby / Jellyfin 服务器\n（飞牛影视接口确认后再加）', icon: Icons.dns_outlined)
+            ? const EmptyView('还没有服务器\n点右下角添加 Emby / Jellyfin / 飞牛影视服务器', icon: Icons.dns_outlined)
             : ReorderableListView.builder(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
                 itemCount: store.servers.length,
@@ -278,10 +278,6 @@ class _ServerEditorState extends State<_ServerEditor> {
   }
 
   Future<ServerProbe?> _probe() async {
-    if (kind == ServerKind.fnos) {
-      setState(() => error = '飞牛影视的接口还没接入（确认接口后再加）');
-      return null;
-    }
     setState(() {
       busy = true;
       error = null;
@@ -609,7 +605,7 @@ class SettingsTab extends StatelessWidget {
           const _Header('关于'),
           const ListTile(
             title: Text('支持的服务器'),
-            subtitle: Text('Emby、Jellyfin（直接播放原文件，不转码；进度会同步回服务器）。\n飞牛影视：接口确认后再加。'),
+            subtitle: Text('Emby、Jellyfin（直接播放原文件，不转码；进度会同步回服务器）。\n飞牛影视：按社区整理的接口接入（飞牛没有公开文档，升级后可能失效）；只支持局域网 / 直连地址（FN ID 远程不行），暂时没有「继续观看」「下一集」。'),
           ),
         ]);
       },

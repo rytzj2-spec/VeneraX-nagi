@@ -81,6 +81,21 @@ Nagisaland 用的 VeneraX 离线优化版（私有，不发布 Release）。基�
 `.github/workflows/suite_build.yml`：推到 suite（或手动运行）→ 编 arm64-v8a，APK 在 Artifacts（Nagisaland-suite-arm64），
 suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式签名在用户电脑上用 merge_venerax.py 合并时做。
 
+## v0.19 – v0.22 验证状态（2026-11-04 整理）
+
+「真机」= 用户装到手机上用过并反馈；「CI」= GitHub Actions 编译出 APK（只说明能编译）；「本机测试」= 云端容器里跑过（不是手机）。
+
+| 版本 / versionCode | 提交 | 内容 | 状态 |
+| --- | --- | --- | --- |
+| v0.19.1 / 51 | 5d86d6b | 分区栏自定义、横屏竖排栏、引擎组 + 预热、Impeller 开关、perf 日志、番剧历史合并、H 验证 | 真机：分区栏 / perf 日志能用；**切分区闪退**（原因见 v0.19.3） |
+| v0.19.2 / 52 | 8948e65 + b03dc2b | 引擎改回独立（后来证明不是闪退原因）、原生崩溃记录 `SuiteExitInfo`；本地修的首帧监听闪退 b03dc2b | 真机：**闪退修好**，引擎组 / 预热 / Impeller 全开也不闪退；崩溃记录生成了 12 份 native 记录 |
+| v0.19.3 / 53 | 6b314e2、bd0dcdf | 面板开关自己画（照 H 的 Material 样子） | 随 v0.19.4 装过，没有单独反馈 |
+| v0.19.4 / 54 | ae21112、60c3fc0 | 预热 / 引擎组默认开、弹幕失败原因、番剧下载多连接分块 + 自动重试、底栏左滑打开设置 | 真机装过（本地编译）；反馈了边缘返回跳游戏库（v0.20.1 修）；**下载 / 弹幕提示没有单独反馈** |
+| v0.20.0 / 55 | e27a503 | 一键配置（导出 / 导入 / 分区开关 / 首次必须导入） | CI（随 d2c0d05）；**没上真机** |
+| v0.20.1 / 56 | 52de86c | 返回手势：左边缘打开设置、分区首页返回行为、去掉番剧「再按一次退出」 | CI（随 d2c0d05）；**没上真机** |
+| v0.21.0 / 57 | d2c0d05 | 配置链接自动更新、局域网屏幕共享（MJPEG）、影视 / H 一起看（SyncPlay） | CI 通过；**没上真机** |
+| v0.22.0 / 58 | d6e3dab 起 | 屏幕共享经服务器（WebRTC）+ 服务器牵线服务；飞牛影视 | 见下面 v0.22.0 一节 |
+
 ## 2026-11-03 统一成一个应用（unify-app 分支）
 以前：CI 编 suite APK（漫画 + 番剧 + H）→ 电脑上 merge_venerax.py 反编译，拼进 Nagisaland 主界面的 smali → 签名。
 现在：**一个工程直接编出完整的 `com.nagisaland.mobile`**，电脑上只剩「加模拟器 + 正式签名」。
@@ -115,7 +130,7 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
     图片缓存也单独一个库 `nagiVideoImages`。
 - 原生：`android/app/.../video/VideoActivity.kt`，独立 Flutter 引擎（缓存 id `nagi_video_engine`，入口 `nagiVideoMain`），创建前
   `KazumiEngine.reserve()`（audio_service 的坑，同漫画）。`SuiteNav` 加 `video`，底栏「影视」在番剧和 H 之间；主界面网页加按钮和 `video.json`。
-- 飞牛影视：接口没公开，确认后在 `emby_api.dart` 的 `ServerKind.fnos` 接上（现在添加时会提示未接入）。
+- 飞牛影视：v0.22.0 按社区整理的接口接上了（`fnos_api.dart`，见 v0.22.0）。
 
 ## 2026-11-04 真机反馈修复
 - 番剧自动选源（`packages/kazumi/lib/services/player/auto_source_service.dart`）：所有源同时测「能搜到 → 能拿到播放列表 → 有要看的那一集」，
@@ -140,7 +155,7 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
 - H：「去验证」（`suite/CfVerifyActivity`）和登录页「Cookie 登录」共用 `suite/NagiHAuth`（Cloudflare Cookie + UA 覆盖，HCookieJar / UserAgentInterceptor 都用）；
   Google 登录按钮隐藏（WebView 里 Google OAuth 不可能成功）；去掉每次切到 H 自动读剪贴板。
 
-## 2026-11-04 v0.19.2（versionCode 52）：修 v0.19.1 切分区闪退
+## 2026-11-04 v0.19.2（versionCode 52）：修 v0.19.1 切分区闪退（对原因的判断有误，真正原因见 v0.19.3；崩溃记录部分有效）
 - 现象：v0.19.1 点影视 / 番剧 / 漫画随机闪退，crash/ 里没有文件（原生层）。perf.txt 里同一个分区的引擎在一次切换后马上又「新建」
   = 进程崩了被拉起；几乎都在第二个 Flutter 分区刚显示出来 1~2 秒后。
 - 判断：`FlutterEngineGroup` 里后建的引擎是从第一个 spawn 出来的，和它共用 UI / 渲染 / IO 线程和 GPU 资源上下文（v0.19.0 是三个独立引擎）。
@@ -240,6 +255,29 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
   - H：Kotlin 版客户端 `han/.../suite/NagiSyncPlay.kt`（协议照 Kazumi：STARTTLS、Hello、joined + ready、State 心跳 + RTT、
     ignoringOnTheFly），`NagiTogetherH.kt` 接 Jzvd（onStatePlaying / onStatePause / onProgress 跳变）；
     播放器顶栏 `tv_together`「一起看」；file 名 `nagih|<videoCode>|<标题>`，对方换视频自动打开同一个 VideoActivity。
+
+## 2026-11-04 v0.22.0（versionCode 58）：屏幕共享经服务器（WebRTC）、飞牛影视
+- 屏幕共享「经服务器」（`suite/SuiteRtcShare.kt`，依赖 `io.getstream:stream-webrtc-android:1.3.10` + `okhttp:4.12.0`）：
+  手机是 WebRTC 房主，每个观看者一条 PeerConnection；`ScreenCapturerAndroid`（最长边 1280、30 帧）→ 硬件 H.264（`DefaultVideoEncoderFactory`，
+  发送端 `setCodecPreferences` 把 H.264 排第一，观看页也排第一）；码率上限按清晰度（3 / 2 / 1 Mbps），`MAINTAIN_RESOLUTION`。
+  声音：WebRTC 只能从录音来，`JavaAudioDeviceModule` 会开麦克风，`setAudioRecordDataCallback` 里每 10ms 整段换成
+  `AudioPlaybackCapture`（复用 `ScreenCapturerAndroid.getMediaProjection()`，Android 14 一次授权只能用一次）录到的播放声音，没有就静音；
+  前台服务类型 `mediaProjection|microphone`（没录音权限时只要 mediaProjection）。牵线：OkHttp WebSocket → `<服务器>/share/ws`。
+  「共享我的屏幕」先选「经服务器 / 局域网直连」；服务器地址**不写死**（仓库是公开的），第一次填，之后记住，一键配置导出时带上（manifest `shareServer`）。
+- 服务器（`server/nagi_share/`，部署见 `doc/屏幕共享部署.md`）：`nagi_share.py`（websockets 12 单进程，127.0.0.1:8090）只牵线 + 下发 ICE：
+  STUN + TURN 临时凭据（Cloudflare Realtime TURN 用 Key ID / Token 换；自建 coturn 用 use-auth-secret 的 HMAC 凭据），`config.json` 切换，只在服务器上。
+  `web/index.html` 观看页（H.264 优先、立体声 Opus、显示「直连 / 经中转」、弹幕聊天）。`deploy_nagi_share.py`（paramiko）：服务器信息读本地
+  `deploy_local.json`（不进 Git），先备份线上 Nginx / 配置，systemd 服务（独立用户、内存上限 80M），在小站 Nginx 的 `location /` 前加 `/share/`
+  （标记包起来，`nginx -t` 不过自动还原），可选装 coturn（限速限并发、禁止转发到内网、每次启动从 GCP 元数据刷新外部 IP）。
+- 飞牛影视（`nagi_video/fnos_api.dart`）：飞牛没有公开文档，按社区逆向整理的协议写（fntv-electron、Kodi 插件 plugin.video.fnmedia、
+  JellyPlex-Watched 的 TrimMedia 适配；没有照抄代码）：`/v/api/v1/...`，`Authx` 签名（MD5(apiKey_路径_nonce_毫秒_MD5(body)_apiSecret)，POST 的 body
+  里也带 nonce），登录 `/login` 拿 token（`Authorization`）；媒体库 `mediadb/list`、条目 `item/list`（分页）、季 / 集、详情、
+  `play/info` → `/media/range/<media_guid>`（播放器带请求头，`PlaybackSource.headers`），进度 `play/record`，标记已看 `item/watched`；
+  图片 `/sys/img<路径>?w=` 也要签名（`EmbyApi.imageHeadersFor`）。数据都转成 Emby 的字段，界面不分两套；`EmbyApi` 每个方法开头按 `ServerKind.fnos` 转过去。
+  没整理到的：继续观看 / 下一集（返回空）、搜索（取 500 条按标题过滤）、标为未看；FN ID 远程访问（只能局域网 / 直连地址）；网盘 / 原盘文件。
+- 状态：CI 编译（见 Actions）；服务器端在云端容器里本机测试过：牵线全流程（开房间 / 密码 / offer-answer / 聊天 / 房主离开），
+  以及 Nginx（同一段配置）+ 观看页 + 一个用画布模拟手机的房主，在无头 Chromium 里端到端看到画面、显示「直连」、弹幕双向。
+  **没上真机，没部署到线上服务器，飞牛没有真机器测过。**
 
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后

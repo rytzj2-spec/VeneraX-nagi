@@ -85,7 +85,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         await native.setProperty('demuxer-cache-dir', (await getTemporaryDirectory()).path);
         await native.setProperty('network-timeout', '60');
       }
-      await player.open(Media(src.url), play: false);
+      await player.open(Media(src.url, httpHeaders: src.headers.isEmpty ? null : src.headers), play: false);
       final start = fromStart ? Duration.zero : Duration(microseconds: item.positionTicks ~/ 10);
       if (start > const Duration(seconds: 5)) {
         // 等拿到时长再跳，否则有的文件跳不过去

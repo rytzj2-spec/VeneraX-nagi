@@ -26,7 +26,7 @@ class NetImage extends StatelessWidget {
     return CachedNetworkImage(
       imageUrl: url!,
       cacheManager: videoImageCache,
-      httpHeaders: EmbyApi(server).imageHeaders,
+      httpHeaders: EmbyApi(server).imageHeadersFor(url!),
       fit: fit,
       fadeInDuration: const Duration(milliseconds: 150),
       placeholder: (_, __) => Container(color: NagiColors.card),

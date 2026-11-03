@@ -1,9 +1,11 @@
 // Nagisaland「影视」分区：Emby / Jellyfin 接口（两者 API 基本相同，Jellyfin 是 Emby 的分支）。
-// 参考 Hills 的功能自己写；飞牛影视的接口确认后再加（ServerKind.fnos 先占位）。
+// 参考 Hills 的功能自己写。飞牛影视（ServerKind.fnos）走 fnos_api.dart，下面每个方法开头转过去，界面不用分两套。
 import 'dart:convert';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
+
+import 'fnos_api.dart';
 
 enum ServerKind { emby, jellyfin, fnos }
 
@@ -134,7 +136,9 @@ class PlaybackSource {
   final String mediaSourceId;
   final String? playSessionId;
   final List<ExternalSubtitle> subtitles;
-  PlaybackSource(this.url, this.mediaSourceId, this.playSessionId, this.subtitles);
+  /// 播放时要带的请求头（飞牛影视要 Authorization / Authx；Emby / Jellyfin 的令牌在地址里，不用）
+  final Map<String, String> headers;
+  PlaybackSource(this.url, this.mediaSourceId, this.playSessionId, this.subtitles, {this.headers = const {}});
 }
 
 class ExternalSubtitle {
@@ -273,6 +277,7 @@ class EmbyApi {
   /// 测试连接：读 /System/Info/Public（不用登录），认出是 Emby 还是 Jellyfin；
   /// 直接访问不行时再试加 /emby 前缀（Emby 的老路径）
   static Future<ServerProbe> probe(String base, {ServerKind? kind, String? deviceId}) async {
+    if (kind == ServerKind.fnos) return FnosApi.probe(base, deviceId: deviceId);
     if (base.isEmpty) throw EmbyException('请填服务器地址');
     final dev = deviceId ?? newDeviceId();
     final candidates = [base, if (!base.toLowerCase().endsWith('/emby')) '$base/emby'];
@@ -313,6 +318,9 @@ class EmbyApi {
     String? localId,
     String? displayName,
   }) async {
+    if (probe.kind == ServerKind.fnos) {
+      return FnosApi.login(probe: probe, username: username, password: password, localId: localId, displayName: displayName);
+    }
     final user = username.trim();
     if (user.isEmpty) throw EmbyException('用户名必填（Emby / Jellyfin 都不能空着用户名登录）');
     final dio = _dio(probe.base, _headers(probe.kind, probe.deviceId, null));
@@ -339,15 +347,20 @@ class EmbyApi {
     );
   }
 
+  bool get _fn => server.kind == ServerKind.fnos;
+  FnosApi get _fnos => FnosApi(server);
+
   String imageUrl(String itemId, String type, {int? maxHeight, int? maxWidth}) {
+    if (_fn) return _fnos.imageUrl(itemId, type, maxHeight: maxHeight, maxWidth: maxWidth);
     final q = <String>['quality=90'];
     if (maxHeight != null) q.add('maxHeight=$maxHeight');
     if (maxWidth != null) q.add('maxWidth=$maxWidth');
     return '${server.url}/Items/$itemId/Images/$type?${q.join('&')}';
   }
 
-  /// 图片请求头（有的服务器图片也要令牌）
+  /// 图片请求头（有的服务器图片也要令牌；飞牛每张图要单独签名）
   Map<String, String> get imageHeaders => {'X-Emby-Token': server.token};
+  Map<String, String> imageHeadersFor(String url) => _fn ? _fnos.imageHeaders(url) : imageHeaders;
 
   List<MediaItem> _items(dynamic data) {
     final list = (data is Map ? data['Items'] : data) as List? ?? const [];
@@ -356,18 +369,18 @@ class EmbyApi {
 
   static const _fields = 'PrimaryImageAspectRatio,ProductionYear,Overview,BasicSyncInfo,UserData,SeriesPrimaryImage,ParentBackdropItemId';
 
-  Future<List<MediaItem>> views() async =>
+  Future<List<MediaItem>> views() async => _fn ? _fnos.views() :
       _items((await _client.get('/Users/${server.userId}/Views')).data);
 
-  Future<List<MediaItem>> resume({int limit = 20}) async => _items((await _client.get('/Users/${server.userId}/Items/Resume',
+  Future<List<MediaItem>> resume({int limit = 20}) async => _fn ? _fnos.resume() : _items((await _client.get('/Users/${server.userId}/Items/Resume',
           queryParameters: {'Limit': limit, 'MediaTypes': 'Video', 'Fields': _fields, 'EnableImageTypes': 'Primary,Backdrop,Thumb'}))
       .data);
 
-  Future<List<MediaItem>> nextUp({int limit = 20}) async => _items((await _client.get('/Shows/NextUp',
+  Future<List<MediaItem>> nextUp({int limit = 20}) async => _fn ? _fnos.resume() : _items((await _client.get('/Shows/NextUp',
           queryParameters: {'UserId': server.userId, 'Limit': limit, 'Fields': _fields}))
       .data);
 
-  Future<List<MediaItem>> latest({String? parentId, int limit = 20}) async => _items((await _client.get(
+  Future<List<MediaItem>> latest({String? parentId, int limit = 20}) async => _fn ? _fnos.latest(parentId: parentId, limit: limit) : _items((await _client.get(
           '/Users/${server.userId}/Items/Latest',
           queryParameters: {'Limit': limit, 'Fields': _fields, if (parentId != null) 'ParentId': parentId}))
       .data);
@@ -383,6 +396,7 @@ class EmbyApi {
     int limit = 60,
     bool recursive = true,
   }) async {
+    if (_fn) return _fnos.items(parentId: parentId, searchTerm: searchTerm, start: start, limit: limit);
     final r = await _client.get('/Users/${server.userId}/Items', queryParameters: {
       if (parentId != null) 'ParentId': parentId,
       if (searchTerm != null) 'SearchTerm': searchTerm,
@@ -400,21 +414,24 @@ class EmbyApi {
   }
 
   Future<MediaItem> item(String id) async {
+    if (_fn) return _fnos.item(id);
     final r = await _client.get('/Users/${server.userId}/Items/$id');
     return MediaItem(server, (r.data as Map).cast<String, dynamic>());
   }
 
-  Future<List<MediaItem>> seasons(String seriesId) async => _items((await _client.get('/Shows/$seriesId/Seasons',
+  Future<List<MediaItem>> seasons(String seriesId) async => _fn ? _fnos.seasons(seriesId) : _items((await _client.get('/Shows/$seriesId/Seasons',
           queryParameters: {'UserId': server.userId, 'Fields': _fields}))
       .data);
 
-  Future<List<MediaItem>> episodes(String seriesId, {String? seasonId}) async => _items((await _client.get(
+  Future<List<MediaItem>> episodes(String seriesId, {String? seasonId}) async =>
+      _fn ? _fnos.episodes(seriesId, seasonId: seasonId) : _items((await _client.get(
           '/Shows/$seriesId/Episodes',
           queryParameters: {'UserId': server.userId, 'Fields': _fields, if (seasonId != null) 'SeasonId': seasonId}))
       .data);
 
   /// 取播放地址：直接播放原文件（static=true，mpv 什么格式都能放，不让服务器转码）
   Future<PlaybackSource> playback(String itemId) async {
+    if (_fn) return _fnos.playback(itemId);
     String msId = itemId;
     String? session;
     String container = '';
@@ -472,24 +489,24 @@ class EmbyApi {
       };
 
   /// 播放进度回报（服务器上「继续观看」用）；失败不影响播放
-  Future<void> reportStart(String itemId, PlaybackSource src, Duration pos) =>
+  Future<void> reportStart(String itemId, PlaybackSource src, Duration pos) => _fn ? _fnos.record(itemId, src, pos) :
       _quiet(() => _client.post('/Sessions/Playing', data: jsonEncode(_report(itemId, src, pos)), options: Options(contentType: 'application/json')));
 
-  Future<void> reportProgress(String itemId, PlaybackSource src, Duration pos, bool paused) => _quiet(() => _client.post(
+  Future<void> reportProgress(String itemId, PlaybackSource src, Duration pos, bool paused) => _fn ? _fnos.record(itemId, src, pos) : _quiet(() => _client.post(
       '/Sessions/Playing/Progress',
       data: jsonEncode(_report(itemId, src, pos, paused: paused)),
       options: Options(contentType: 'application/json')));
 
-  Future<void> reportStopped(String itemId, PlaybackSource src, Duration pos) => _quiet(() => _client.post(
+  Future<void> reportStopped(String itemId, PlaybackSource src, Duration pos) => _fn ? _fnos.record(itemId, src, pos) : _quiet(() => _client.post(
       '/Sessions/Playing/Stopped',
       data: jsonEncode(_report(itemId, src, pos)),
       options: Options(contentType: 'application/json')));
 
-  Future<void> setPlayed(String itemId, bool played) => _quiet(() => played
+  Future<void> setPlayed(String itemId, bool played) => _fn ? _fnos.setPlayed(itemId, played) : _quiet(() => played
       ? _client.post('/Users/${server.userId}/PlayedItems/$itemId')
       : _client.delete('/Users/${server.userId}/PlayedItems/$itemId'));
 
-  Future<void> logout() => _quiet(() => _client.post('/Sessions/Logout'));
+  Future<void> logout() => _fn ? Future.value() : _quiet(() => _client.post('/Sessions/Logout'));
 
   static Future<void> _quiet(Future<dynamic> Function() f) async {
     try {

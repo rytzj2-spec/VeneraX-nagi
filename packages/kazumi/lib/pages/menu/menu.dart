@@ -18,7 +18,6 @@ class ScaffoldMenu extends StatefulWidget {
 class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   final _outletKey = GlobalKey<RouterOutletState>();
   late int _selectedIndex = menu.indexForPath(widget.location);
-  DateTime? _lastExitPromptAt;
 
   /// The shell sits at the bottom of the root stack and stays mounted while
   /// other pages cover it, so it publishes that state for its subtree.
@@ -61,7 +60,6 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   }
 
   void _selectDestination(int index) {
-    _lastExitPromptAt = null;
     if (index == _selectedIndex) {
       return;
     }
@@ -73,7 +71,6 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
 
   void _handleSystemBack(BuildContext context) {
     if (_outletKey.currentState?.maybePop() ?? false) {
-      _lastExitPromptAt = null;
       return;
     }
 
@@ -84,7 +81,6 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
 
     // Nagisaland：统一应用里不要 Kazumi 自己的「再按一次退出」，根页面返回直接交给原生的 SuiteNav
     // （左边缘 = 打开番剧设置；否则按「分区首页返回时」：退到后台 / 回到游戏库 / 什么也不做）
-    _lastExitPromptAt = null;
     SystemNavigator.pop();
   }
 
