@@ -232,6 +232,23 @@ class Bridge(private val activity: MainActivity) {
     @JavascriptInterface
     fun uninstall(pkg: String?): Boolean = try { Ops.uninstall(activity, pkg!!); true } catch (e: Throwable) { false }
 
+    // ---------- 分区栏（和原生 SuiteNavBar 共用 SuiteNavConfig） ----------
+    @JavascriptInterface fun navConfig(): String = io.github.kyosee.venera.suite.SuiteNavConfig.toJson(activity)
+
+    @JavascriptInterface
+    fun openMore(current: String?) {
+        activity.runOnUiThread {
+            io.github.kyosee.venera.suite.SuitePanels.showMore(activity, current ?: "lib") { k ->
+                io.github.kyosee.venera.suite.SuiteNav.go(activity, k)
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun editNav() {
+        activity.runOnUiThread { io.github.kyosee.venera.suite.SuitePanels.showEditor(activity) }
+    }
+
     // ---------- 识屏翻译 ----------
     @JavascriptInterface fun ocrStart(): String = OcrOverlay.start(activity)
 

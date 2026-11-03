@@ -127,6 +127,19 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
 - 影视登录：用户名必填；失败时显示服务器返回的内容；Emby 用 `Emby …` 授权头 + 地址参数里的客户端信息、不发 Authorization 头；
   自动试 `/emby` 前缀；添加服务器改成「类型 / http·https / 地址 / 端口 → 测试连接 → 用户名密码」两步。
 
+## 2026-11-04 v0.19.1
+- 分区栏自定义（`android/app/.../suite/`）：`SuiteNavConfig`（SharedPreferences `suite_nav`：8 个分区的顺序 + 哪些在底栏，3~6 个）
+  是唯一配置，主界面网页底栏（`Bridge.navConfig/openMore/editNav`，`window.__nagiNavChanged`）、原生 `SuiteNavBar`、横屏左侧竖排栏三处共用，改了马上生效。
+  「更多」固定在最后：点开是格子面板（点 = 打开，长按 = 放到底栏），底部「编辑底栏」（拖动排序、每个分区开关「底栏」）和「流畅度设置」；
+  长按底栏的「更多」也直接进编辑。横屏：原生分区栏变成左侧竖排，网页用 `@media (orientation: landscape)` 同样竖排。没做边缘划出的侧边栏。
+- 流畅度：漫画 / 番剧 / 影视的引擎都从 `SuiteEngines` 的同一个 `FlutterEngineGroup` 建并常驻；主界面空闲时后台预热番剧、影视（漫画第一次打开时建）。
+  Impeller：manifest 里的写死关闭去掉了，改由 `SuiteStartup`（androidx.startup，进程一启动）调 `FlutterLoader.ensureInitializationComplete` 传
+  `--enable-impeller=…`；「流畅度设置」里可以打开（完全退出再开生效）。切换耗时写到 `内部存储/Nagisaland/debug/perf.txt`（`SuitePerf`）：
+  从点击到 onResume、到画面出来（Flutter 等首帧；表面没重建时等下一帧），并记引擎是预热好的还是要新建、各引擎新建用了多少毫秒。
+- 番剧历史按番合并（Bangumi id，没有按标题）：保存进度时把别的源的记录并进来只留一条；第一次加载时迁移旧数据；恢复进度取所有源里更新时间最新的那条。
+- H：「去验证」（`suite/CfVerifyActivity`）和登录页「Cookie 登录」共用 `suite/NagiHAuth`（Cloudflare Cookie + UA 覆盖，HCookieJar / UserAgentInterceptor 都用）；
+  Google 登录按钮隐藏（WebView 里 Google OAuth 不可能成功）；去掉每次切到 H 自动读剪贴板。
+
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后
 `flutter build apk --release --target-platform android-arm64 --dart-define-from-file=dart_defines.txt`（没有 dart_defines.txt 就去掉这个参数）。

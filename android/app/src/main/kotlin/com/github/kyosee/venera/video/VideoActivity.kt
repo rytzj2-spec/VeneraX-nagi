@@ -22,12 +22,7 @@ class VideoActivity : FlutterActivity() {
         fun engine(context: Context): FlutterEngine {
             val cache = FlutterEngineCache.getInstance()
             cache.get(ENGINE_ID)?.let { return it }
-            val loader = FlutterInjector.instance().flutterLoader()
-            loader.startInitialization(context.applicationContext)
-            loader.ensureInitializationComplete(context.applicationContext, null)
-            val engine = FlutterEngine(context.applicationContext)
-            engine.navigationChannel.setInitialRoute("/")
-            engine.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint(loader.findAppBundlePath(), "nagiVideoMain"))
+            val engine = io.github.kyosee.venera.suite.SuiteEngines.create(context, "nagiVideoMain", "影视")
             cache.put(ENGINE_ID, engine)
             return engine
         }

@@ -25,9 +25,14 @@ object KazumiEngine {
 
     private var placeholder: FlutterEngine? = null
 
+    /** 缓存里的是不是占位引擎（还没真正建番剧引擎） */
+    @JvmStatic
+    fun isPlaceholder(e: FlutterEngine) = e === placeholder
+
     @JvmStatic
     @Synchronized
     fun reserve(context: Context) {
+        io.github.kyosee.venera.suite.SuiteEngines.initLoader(context)
         if (FlutterEngineCache.getInstance().get(ID) != null) return
         val p = FlutterEngine(context.applicationContext, null as FlutterLoader?, FlutterJNI(), null as Array<String>?, false)
         placeholder = p
@@ -45,14 +50,8 @@ object KazumiEngine {
             try { it.destroy() } catch (_: Throwable) {}
             placeholder = null
         }
-        val loader = FlutterInjector.instance().flutterLoader()
-        loader.startInitialization(context.applicationContext)
-        loader.ensureInitializationComplete(context.applicationContext, null)
-        val engine = FlutterEngine(context.applicationContext)
-        engine.navigationChannel.setInitialRoute("/")
-        engine.dartExecutor.executeDartEntrypoint(
-            DartExecutor.DartEntrypoint(loader.findAppBundlePath(), "kazumiMain")
-        )
+        // Nagisaland：从共享的 FlutterEngineGroup 建（见 SuiteEngines）
+        val engine = io.github.kyosee.venera.suite.SuiteEngines.create(context, "kazumiMain", "番剧")
         cache.put(ID, engine)
         return engine
     }

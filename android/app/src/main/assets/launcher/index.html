@@ -123,6 +123,14 @@ ol.steps { padding-left: 20px; margin: 8px 0; color: var(--sub); font-size: 13px
 /* 底部导航 */
 .nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; height: var(--nav); padding-bottom: env(safe-area-inset-bottom);
   display: flex; background: rgba(20,20,27,.97); border-top: 1px solid var(--line); }
+/* 横屏：左侧竖排导航栏（和原生分区栏一样） */
+@media (orientation: landscape) {
+  :root { --nav: 0px; --rail: calc(68px + env(safe-area-inset-left)); }
+  body { padding-left: var(--rail); }
+  .nav { top: 0; bottom: 0; right: auto; width: var(--rail); height: auto; flex-direction: column; justify-content: center;
+    padding-bottom: 0; padding-left: env(safe-area-inset-left); border-top: none; border-right: 1px solid var(--line); }
+  .nav button { flex: 0 0 62px; width: 100%; }
+}
 .nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11.5px; color: var(--muted); }
 .nav svg { width: 22px; height: 22px; }
 .nav button.on { color: #f0abfc; }
@@ -246,6 +254,7 @@ ol.steps { padding-left: 20px; margin: 8px 0; color: var(--sub); font-size: 13px
   <button data-video hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5"/></svg>影视</button>
   <button data-h hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20.5s-7.5-4.6-9.3-9.2C1.4 8 3.6 4.5 7 4.5c2.1 0 3.6 1.2 5 3 1.4-1.8 2.9-3 5-3 3.4 0 5.6 3.5 4.3 6.8-1.8 4.6-9.3 9.2-9.3 9.2z"/></svg>H</button>
   <button data-tab="extract"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>解压</button>
+  <button data-more hidden><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>更多</button>
   <button data-tab="emu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="12" rx="4"/><path d="M7 11v4M5 13h4"/><circle cx="16" cy="12" r="1"/><circle cx="18" cy="14" r="1"/></svg>模拟器</button>
 </nav>
 
@@ -271,6 +280,7 @@ const App = (() => {
     cur = name;
     for (const [k, v] of Object.entries(TABS)) $(v[0]).hidden = k !== name;
     document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+    markMore();
     $('#tabTitle').textContent = TABS[name][1];
     $('#btnRefresh').hidden = $('#btnSettings').hidden = $('#btnAdd').hidden = name !== 'lib';
     closeSheet();
@@ -296,7 +306,30 @@ const App = (() => {
   Library.init(); Site.init(); Extract.init(); Emulators.init();
   $('#btnPerm').onclick = () => N.requestStorage();
   $('#mask').onclick = closeSheet;
+  // 底栏：放哪些、什么顺序由原生的 SuiteNavConfig 决定（和各分区的原生底栏、横屏竖排栏共用一份），其余进「更多」
+  const navKey = b => b.dataset.tab || ['comic', 'anime', 'video', 'h', 'more'].find(k => b.hasAttribute('data-' + k)) || '';
+  function markMore() {
+    const m = $('#nav button[data-more]'); if (!m) return;
+    const on = [...document.querySelectorAll('#nav button[data-tab]')].find(b => b.classList.contains('on'));
+    m.classList.toggle('on', !!on && on.hidden);
+  }
+  function applyNav() {
+    let cfg = null;
+    try { cfg = N && N.navConfig ? JSON.parse(N.navConfig()) : null; } catch (e) {}
+    const nav = $('#nav'), by = {};
+    nav.querySelectorAll('button').forEach(b => { by[navKey(b)] = b; });
+    if (!cfg) { if (by.more) by.more.hidden = true; return; }
+    cfg.bar.forEach(k => { const b = by[k]; if (b) { b.hidden = false; nav.appendChild(b); } });
+    cfg.more.forEach(k => { const b = by[k]; if (b) { b.hidden = true; nav.appendChild(b); } });
+    if (by.more) { by.more.hidden = false; nav.appendChild(by.more); }
+    markMore();
+  }
+  window.__nagiNavChanged = applyNav;
+  applyNav();
+  // 长按「更多」= 编辑底栏
+  $('#nav').addEventListener('contextmenu', e => { if (e.target.closest('button[data-more]')) { e.preventDefault(); if (N.editNav) N.editNav(); } });
   $('#nav').onclick = e => {
+    if (e.target.closest('button[data-more]')) { if (N.openMore) N.openMore(cur || 'lib'); return; }
     if (e.target.closest('button[data-comic]')) { openComic(); return; }
     if (e.target.closest('button[data-anime]')) { openAnime(); return; }
     if (e.target.closest('button[data-video]')) { openVideo(); return; }
@@ -305,7 +338,7 @@ const App = (() => {
   };
   // 漫画：同一个 App 里的 VeneraX 界面（merge_venerax.py 合并进来时才有 comic.json）
   let comic = null;
-  fetch('comic.json').then(r => r.ok ? r.json() : null).then(j => { comic = j; const b = $('#nav button[data-comic]'); if (b) b.hidden = !j; }).catch(() => {});
+  fetch('comic.json').then(r => r.ok ? r.json() : null).then(j => { comic = j; applyNav(); }).catch(() => {});
   function openComic() {
     if (!comic || !N) return;
     const err = N.launchIntent(JSON.stringify({ pkg: 'com.nagisaland.mobile', cls: comic.cls, action: 'android.intent.action.MAIN', extras: comic.extras || undefined }));
@@ -313,7 +346,7 @@ const App = (() => {
   }
   // 番剧：同一个 App 里的 Kazumi 界面（suite APK 合并进来时才有 anime.json）
   let anime = null;
-  fetch('anime.json').then(r => r.ok ? r.json() : null).then(j => { anime = j; const b = $('#nav button[data-anime]'); if (b) b.hidden = !j; }).catch(() => {});
+  fetch('anime.json').then(r => r.ok ? r.json() : null).then(j => { anime = j; applyNav(); }).catch(() => {});
   function openAnime() {
     if (!anime || !N) return;
     const err = N.launchIntent(JSON.stringify({ pkg: 'com.nagisaland.mobile', cls: anime.cls, action: 'android.intent.action.MAIN', extras: anime.extras || undefined }));
@@ -321,7 +354,7 @@ const App = (() => {
   }
   // 影视：Emby / Jellyfin（统一版才有 video.json）
   let video = null;
-  fetch('video.json').then(r => r.ok ? r.json() : null).then(j => { video = j; const b = $('#nav button[data-video]'); if (b) b.hidden = !j; }).catch(() => {});
+  fetch('video.json').then(r => r.ok ? r.json() : null).then(j => { video = j; applyNav(); }).catch(() => {});
   function openVideo() {
     if (!video || !N) return;
     const err = N.launchIntent(JSON.stringify({ pkg: 'com.nagisaland.mobile', cls: video.cls, action: 'android.intent.action.MAIN', extras: video.extras || undefined }));
@@ -329,7 +362,7 @@ const App = (() => {
   }
   // H：同一个 App 里的 Han1meViewer 界面（suite APK 带 H 分区时才有 h.json）
   let hsec = null;
-  fetch('h.json').then(r => r.ok ? r.json() : null).then(j => { hsec = j; const b = $('#nav button[data-h]'); if (b) b.hidden = !j; }).catch(() => {});
+  fetch('h.json').then(r => r.ok ? r.json() : null).then(j => { hsec = j; applyNav(); }).catch(() => {});
   function openH() {
     if (!hsec || !N) return;
     const err = N.launchIntent(JSON.stringify({ pkg: 'com.nagisaland.mobile', cls: hsec.cls, action: 'android.intent.action.MAIN', extras: hsec.extras || undefined }));

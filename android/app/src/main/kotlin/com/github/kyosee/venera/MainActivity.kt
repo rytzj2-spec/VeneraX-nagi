@@ -72,6 +72,12 @@ class MainActivity : FlutterFragmentActivity() {
         handleNotificationRoute(intent)
     }
 
+    // Nagisaland：漫画的引擎也从共享的 FlutterEngineGroup 建，常驻（切走再回来不重建）
+    override fun provideFlutterEngine(context: android.content.Context): io.flutter.embedding.engine.FlutterEngine? =
+        io.github.kyosee.venera.suite.SuiteEngines.comic(context)
+
+    // 由宿主提供的引擎不会随界面销毁（FlutterFragment 的 isFlutterEngineFromHost）
+
     // Nagisaland suite：底部常驻分区栏；根页面返回时回到游戏库而不是关掉漫画
     override fun onPostCreate(savedInstanceState: Bundle?) {
         super.onPostCreate(savedInstanceState)

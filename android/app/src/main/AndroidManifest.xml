@@ -77,9 +77,17 @@
             </intent-filter>
         </activity>
         <!-- Kazumi 的视频播放（media_kit）按原项目设置关闭 Impeller，走 Skia -->
-        <meta-data
-            android:name="io.flutter.embedding.android.EnableImpeller"
-            android:value="false" />
+        <!-- Impeller 开关改由 SuiteEngines 在进程启动时决定（设置里可以打开，默认关：Kazumi 的 media_kit 按原项目用 Skia） -->
+        <provider
+            xmlns:tools="http://schemas.android.com/tools"
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="io.github.kyosee.venera.suite.SuiteStartup"
+                android:value="androidx.startup" />
+        </provider>
         <!-- Nagisaland suite：番剧分区（Kazumi 2.4.2，GPL-3.0）。独立 Flutter 引擎，dart 入口 kazumiMain -->
         <activity
             android:name=".suite.SuiteSwitchActivity"

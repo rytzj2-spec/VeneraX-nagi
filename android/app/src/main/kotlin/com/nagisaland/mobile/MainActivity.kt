@@ -74,6 +74,8 @@ class MainActivity : Activity() {
         setContentView(wv)
         hideSystemUi()
         wv.loadUrl(LAUNCHER)
+        // 空闲时后台预热番剧、影视的 Flutter 引擎，切过去不用现建
+        io.github.kyosee.venera.suite.SuiteEngines.schedulePrewarm(this)
     }
 
     @Suppress("DEPRECATION")
