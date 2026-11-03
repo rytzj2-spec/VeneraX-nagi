@@ -242,8 +242,9 @@ class HomeSettingsFragment : YenalySettingsFragment(R.xml.settings_home) {
             setSummaryConverter(defValue = 0, converter = ::toIntervalDaysPrettyString)
         }
         useAnalytics.apply {
-            // Nagisaland suite：没有 Firebase，隐藏「统计」开关
-            isVisible = false
+            setOnPreferenceChangeListener { _, newValue ->
+                return@setOnPreferenceChangeListener true
+            }
             setOnPreferenceLongClickListener {
                 privacyDialog.showWithBlurEffect()
                 return@setOnPreferenceLongClickListener true

@@ -1,488 +1,273 @@
 package io.github.kyosee.venera.suite
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
-import android.widget.Toast
 import androidx.core.graphics.Insets
+import androidx.core.graphics.PathParser
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.startup.Initializer
+import io.github.kyosee.venera.MainActivity
+import io.github.kyosee.venera.kazumi.KazumiActivity
 import java.lang.ref.WeakReference
+import kotlin.math.roundToInt
 
 /**
- * Nagisaland suite：多分区之间的切换。
+ * Nagisaland suite：常驻底栏、分区切换不跳转。
  *
- * 各分区各是一个 Activity，都在同一个任务里常驻，用 `REORDER_TO_FRONT | NO_ANIMATION` 切换，状态保留：
- * - Nagisaland 主界面（WebView，游戏库 / 小站 / 解压 / 模拟器是它网页里的 tab）
- * - 漫画：VeneraX [io.github.kyosee.venera.MainActivity]
- * - 番剧：Kazumi [io.github.kyosee.venera.kazumi.KazumiActivity]
- * - H：Han1meViewer `com.yenaly.han1meviewer.ui.activity.MainActivity`（library 模块，通过反射调用这里）
+ * 各分区各是一个 Activity（Nagisaland 的 WebView 主界面 / 漫画 VeneraX / 番剧 Kazumi / H Han1meViewer），都在同一个任务里常驻，
+ * 切换时用 REORDER_TO_FRONT + 无动画把目标提到最前，状态全保留。Nagisaland 主界面自带网页底栏；
+ * 漫画、番剧界面底部由这里加一条外观一样的原生底栏。
  *
- * 漫画 / 番剧 / H 三个界面底部挂 [SuiteNavBar]，样式照 Nagisaland 网页底栏。
- * H 模块用反射调用 [attach] / [interceptFinish]，proguard 里保留了这个类。
+ * 只在和 Nagisaland 合并后的 APK 里生效（找得到 com.nagisaland.mobile.MainActivity）；单独的 suite APK 行为不变。
  */
 object SuiteNav {
-    private const val TAG = "SuiteNav"
+    const val NAGI_MAIN = "com.nagisaland.mobile.MainActivity"
+    const val EXTRA_TO = "to"
+    private val NAGI_TABS = setOf("lib", "site", "extract", "emu")
 
-    const val COMIC = "comic"
-    const val ANIME = "anime"
-    const val H = "h"
-    const val GAMES = "games"
-    const val SITE = "site"
-    const val UNZIP = "unzip"
-    const val EMULATOR = "emulator"
-
-    const val COMIC_ACTIVITY = "io.github.kyosee.venera.MainActivity"
-    const val ANIME_ACTIVITY = "io.github.kyosee.venera.kazumi.KazumiActivity"
-    const val H_ACTIVITY = "com.yenaly.han1meviewer.ui.activity.MainActivity"
-
-    /** 底栏顺序，和 Nagisaland 网页底栏一致。 */
-    class Section(val id: String, val label: String, val activity: String?)
-
-    val sections = listOf(
-        Section(GAMES, "游戏库", null),
-        Section(SITE, "小站", null),
-        Section(COMIC, "漫画", COMIC_ACTIVITY),
-        Section(ANIME, "番剧", ANIME_ACTIVITY),
-        Section(H, "H", H_ACTIVITY),
-        Section(UNZIP, "解压", null),
-        Section(EMULATOR, "模拟器", null),
-    )
-
-    private val ownActivities = setOf(COMIC_ACTIVITY, ANIME_ACTIVITY, H_ACTIVITY)
-
-    private val handler = Handler(Looper.getMainLooper())
-
-    /** 还活着的 Activity（弱引用），用来找 Nagisaland 主界面的 WebView。 */
-    private val live = LinkedHashMap<String, WeakReference<Activity>>()
-
-    /** Nagisaland 主界面被系统回收过时，等它重新打开后再点的 tab（类名 to 分区）。 */
-    private var pendingTab: Pair<String, Section>? = null
-
-    /** 不是 Nagisaland 主界面的包（VeneraX / Kazumi / H 以及它们带的库）。 */
-    private val ownPackages = listOf("io.github.kyosee.venera.", "com.yenaly.", "com.pichillilorenzo.")
-
-    @Volatile
-    private var callbacksInstalled = false
-
-    fun section(id: String?): Section? {
-        if (id == null) return null
-        val key = id.trim().lowercase()
-        return sections.firstOrNull { it.id == key || it.label.lowercase() == key }
-            ?: when (key) {
-                "manga", "venera", "venerax" -> sections.first { it.id == COMIC }
-                "bangumi", "kazumi", "video" -> sections.first { it.id == ANIME }
-                "hanime", "han", "han1me", "han1meviewer" -> sections.first { it.id == H }
-                "library", "game", "home" -> sections.first { it.id == GAMES }
-                "extract", "unarchive" -> sections.first { it.id == UNZIP }
-                "emu" -> sections.first { it.id == EMULATOR }
-                else -> null
-            }
+    private var nagiClass: Class<*>? = null
+    private val hClass: Class<*>? by lazy {
+        try { Class.forName("com.yenaly.han1meviewer.ui.activity.MainActivity") } catch (e: Throwable) { null }
     }
+    private var checked = false
+    private var callbacksRegistered = false
+    @Volatile private var pendingTab: String? = null
+    private var nagiRef: WeakReference<Activity>? = null
 
-    fun sectionOf(activity: Activity): Section? =
-        sections.firstOrNull { it.activity == activity.javaClass.name }
-
-    // <editor-fold desc="切换">
-
-    /** 从 [from] 切到 [sectionId]。 */
     @JvmStatic
-    fun go(from: Activity, sectionId: String) {
-        val section = section(sectionId) ?: run {
-            Log.w(TAG, "unknown section $sectionId")
+    fun enabled(): Boolean {
+        if (!checked) {
+            nagiClass = try { Class.forName(NAGI_MAIN) } catch (e: Throwable) { null }
+            checked = true
+        }
+        return nagiClass != null
+    }
+
+    /** 切到某个分区：comic / anime / h / lib / site / extract / emu */
+    @JvmStatic
+    fun go(from: Activity, to: String) {
+        if (!enabled()) return
+        val cls: Class<*> = when (to) {
+            "comic" -> MainActivity::class.java
+            "anime" -> KazumiActivity::class.java
+            "h" -> hClass ?: return
+            in NAGI_TABS -> { pendingTab = to; nagiClass!! }
+            else -> return
+        }
+        if (cls == from.javaClass) {           // 已经在这个分区
+            if (to in NAGI_TABS) applyPendingTab(from)
             return
         }
-        install(from.application)
-        if (section.activity != null) {
-            if (from.javaClass.name == section.activity) return
-            start(from, Intent().setClassName(from, section.activity))
-        } else {
-            goNagisaland(from, section)
+        val i = Intent(from, cls).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+        from.startActivity(i)
+        @Suppress("DEPRECATION")
+        from.overridePendingTransition(0, 0)
+    }
+
+    /**
+     * 漫画/番剧在根页面按返回时 Flutter 会 finish() 这个界面；这里改成回到「游戏库」，界面保留不销毁。
+     * 返回 true 表示已处理（调用方不要再 super.finish()）。
+     */
+    @JvmStatic
+    fun interceptFinish(a: Activity): Boolean {
+        if (!enabled() || a.isChangingConfigurations) return false
+        val nagi = nagiRef?.get()
+        if (nagi != null && (nagi.isFinishing || nagi.isDestroyed)) return false
+        go(a, "lib")
+        return true
+    }
+
+    private fun ensureCallbacks(app: Application) {
+        if (callbacksRegistered) return
+        callbacksRegistered = true
+        app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityCreated(a: Activity, b: Bundle?) { remember(a) }
+            override fun onActivityStarted(a: Activity) { remember(a) }
+            override fun onActivityResumed(a: Activity) {
+                remember(a)
+                if (a.javaClass.name == NAGI_MAIN) applyPendingTab(a)
+            }
+            override fun onActivityPaused(a: Activity) {}
+            override fun onActivityStopped(a: Activity) {}
+            override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
+            override fun onActivityDestroyed(a: Activity) {}
+        })
+    }
+
+    private fun remember(a: Activity) {
+        if (a.javaClass.name == NAGI_MAIN) nagiRef = WeakReference(a)
+    }
+
+    private fun applyPendingTab(a: Activity) {
+        val t = pendingTab ?: return
+        pendingTab = null
+        val wv = findWebView(a.window.decorView) ?: return
+        wv.post {
+            wv.evaluateJavascript(
+                "(function(){var b=document.querySelector('#nav button[data-tab=\"$t\"]');if(b&&!b.classList.contains('on'))b.click();})()",
+                null
+            )
         }
     }
 
-    private fun start(from: Activity, intent: Intent) {
-        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-        try {
-            from.startActivity(intent)
-            noTransition(from)
-        } catch (e: Exception) {
-            Log.e(TAG, "start ${intent.component} failed", e)
-            Toast.makeText(from, "切换失败：${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun noTransition(activity: Activity) {
-        if (Build.VERSION.SDK_INT >= 34) {
-            activity.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, 0, 0)
-            activity.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_CLOSE, 0, 0)
-        } else {
-            activity.overridePendingTransition(0, 0)
-        }
-    }
-
-    private fun goNagisaland(from: Activity, section: Section) {
-        val main = nagisalandActivity(from)
-        if (main == null) {
-            Toast.makeText(from, "「${section.label}」在 Nagisaland 主界面里，这个安装包没有合并 Nagisaland", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val alive = live[main]?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
-        if (alive != null) {
-            clickTab(alive, section, retries = 0)
-        } else {
-            pendingTab = main to section
-        }
-        start(from, Intent().setClassName(from, main).putExtra("nagi_tab", section.id))
-    }
-
-    private fun isOwn(className: String) = ownPackages.any { className.startsWith(it) }
-
-    private var nagisalandMain: String? = null
-
-    /** Nagisaland 主界面：本包里不属于漫画 / 番剧 / H 的那个桌面入口（合并进 Nagisaland 后才有）。 */
-    private fun nagisalandActivity(context: Context): String? {
-        nagisalandMain?.let { return it }
-        return try {
-            val pm = context.packageManager
-            val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.packageName)
-            @Suppress("DEPRECATION")
-            pm.queryIntentActivities(query, PackageManager.MATCH_DISABLED_COMPONENTS)
-                .map { info -> info.activityInfo.targetActivity ?: info.activityInfo.name }
-                .map { if (it.startsWith(".")) context.packageName + it else it }
-                .firstOrNull { !isOwn(it) }
-                ?.also { nagisalandMain = it }
-        } catch (e: Exception) {
-            Log.w(TAG, "query launcher failed", e)
-            null
-        }
-    }
-
-    private fun findWebView(view: View?): WebView? {
-        if (view is WebView) return view
-        if (view is ViewGroup) {
-            for (i in 0 until view.childCount) findWebView(view.getChildAt(i))?.let { return it }
-        }
+    private fun findWebView(v: View): WebView? {
+        if (v is WebView) return v
+        if (v is ViewGroup) for (i in 0 until v.childCount) findWebView(v.getChildAt(i))?.let { return it }
         return null
     }
 
-    /**
-     * 在 Nagisaland 的网页里点底栏按钮（`#nav button[data-tab]`）。按文字匹配，不依赖 data-tab 的具体值。
-     */
-    private fun clickTab(activity: Activity, section: Section, retries: Int) {
-        val webView = findWebView(activity.window?.decorView)
-        if (webView == null) {
-            if (retries < 10) handler.postDelayed({ clickTab(activity, section, retries + 1) }, 300)
-            return
-        }
-        val label = section.label.replace("'", "")
-        val js = """
-            (function(label, id) {
-              var sels = ['#nav button[data-tab]', '.nav button[data-tab]', '#nav button', '.nav button', 'nav button', '[data-tab]'];
-              for (var i = 0; i < sels.length; i++) {
-                var list = document.querySelectorAll(sels[i]);
-                for (var j = 0; j < list.length; j++) {
-                  var b = list[j];
-                  var tab = b.getAttribute('data-tab') || '';
-                  var text = (b.textContent || '').replace(/\s+/g, '');
-                  if (tab === id || (text && text.indexOf(label) >= 0)) { b.click(); return 'ok'; }
-                }
-              }
-              return 'none';
-            })('$label', '${section.id}')
-        """.trimIndent()
-        try {
-            webView.evaluateJavascript(js) { result ->
-                if (result?.contains("ok") != true && retries < 10) {
-                    // 网页还没加载完，稍后再试
-                    handler.postDelayed({ clickTab(activity, section, retries + 1) }, 500)
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "clickTab failed", e)
-        }
-    }
-
-    // </editor-fold>
-
-    // <editor-fold desc="底栏">
-
-    /** 在 [activity] 底部挂上常驻底栏，[current] 是当前分区。要在 setContentView 之后调用。 */
+    /** 在漫画/番剧界面底部加常驻底栏（在 onPostCreate 里调用） */
     @JvmStatic
-    fun attach(activity: Activity, current: String) {
-        install(activity.application)
-        val content = activity.findViewById<FrameLayout>(android.R.id.content) ?: return
+    fun attach(a: Activity, current: String) {
+        if (!enabled()) return
+        ensureCallbacks(a.application)
+        val content = a.findViewById<FrameLayout>(android.R.id.content) ?: return
         if (content.findViewWithTag<View>(SuiteNavBar.TAG) != null) return
-        val bar = SuiteNavBar(activity, current)
-        content.addView(
-            bar,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM
-            )
-        )
-        ViewCompat.setOnApplyWindowInsetsListener(content) { parent, insets ->
-            dispatchInsets(activity, parent as ViewGroup, bar, insets)
-            WindowInsetsCompat.CONSUMED
-        }
-        content.requestApplyInsets()
-    }
+        val child = content.getChildAt(0) ?: return
+        val bar = SuiteNavBar(a, current) { go(a, it) }
+        bar.tag = SuiteNavBar.TAG
+        content.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
 
-    /**
-     * 底栏可见时：底栏自己垫上导航栏的高度，其余内容向上让出底栏的位置，
-     * 并且收到的 insets 里不再含底部导航栏（否则 Flutter 会再留一次空白）。
-     * 沉浸（隐藏系统栏）、键盘弹出、横屏、画中画时底栏隐藏。
-     */
-    private fun dispatchInsets(activity: Activity, content: ViewGroup, bar: SuiteNavBar, insets: WindowInsetsCompat) {
-        val nav = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-        val show = shouldShow(activity, insets)
-        bar.visibility = if (show) View.VISIBLE else View.GONE
-        val adjusted = if (show) {
-            bar.setPadding(nav.left, 0, nav.right, nav.bottom)
-            val tappable = insets.getInsets(WindowInsetsCompat.Type.tappableElement())
-            WindowInsetsCompat.Builder(insets)
-                .setInsets(WindowInsetsCompat.Type.navigationBars(), Insets.of(nav.left, nav.top, nav.right, 0))
-                .setInsets(WindowInsetsCompat.Type.tappableElement(), Insets.of(tappable.left, tappable.top, tappable.right, 0))
-                .build()
-        } else insets
-        val margin = if (show) bar.barHeight + nav.bottom else 0
-        for (i in 0 until content.childCount) {
-            val child = content.getChildAt(i)
-            if (child === bar) continue
-            val lp = child.layoutParams as? ViewGroup.MarginLayoutParams
-            if (lp != null && lp.bottomMargin != margin) {
-                lp.bottomMargin = margin
-                child.layoutParams = lp
+        ViewCompat.setOnApplyWindowInsetsListener(content) { _, ins ->
+            val nav = ins.getInsets(WindowInsetsCompat.Type.navigationBars())
+            val pip = Build.VERSION.SDK_INT >= 24 && a.isInPictureInPictureMode
+            val show = ins.isVisible(WindowInsetsCompat.Type.statusBars()) &&
+                    !ins.isVisible(WindowInsetsCompat.Type.ime()) &&
+                    a.resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE && !pip
+            val lp = child.layoutParams as ViewGroup.MarginLayoutParams
+            if (!show) {
+                bar.visibility = View.GONE
+                if (lp.bottomMargin != 0) { lp.bottomMargin = 0; child.layoutParams = lp }
+                return@setOnApplyWindowInsetsListener ins
             }
-            ViewCompat.dispatchApplyWindowInsets(child, adjusted)
-        }
-    }
-
-    private fun shouldShow(activity: Activity, insets: WindowInsetsCompat): Boolean {
-        if (Build.VERSION.SDK_INT >= 24 && activity.isInPictureInPictureMode) return false
-        if (activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) return false
-        if (insets.isVisible(WindowInsetsCompat.Type.ime())) return false
-        // 沉浸模式（全屏阅读 / 全屏播放）时系统栏是隐藏的。以状态栏为准；导航栏只在它本来有高度、
-        // 却被 App 隐藏时才算（有的系统隐藏了手势条，导航栏高度本来就是 0）。
-        if (!insets.isVisible(WindowInsetsCompat.Type.statusBars())) return false
-        val navHidden = !insets.isVisible(WindowInsetsCompat.Type.navigationBars()) &&
-                insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars()).bottom > 0
-        return !navHidden
-    }
-
-    // </editor-fold>
-
-    /**
-     * 分区主界面按返回键退出时（Flutter 的 SystemNavigator.pop、H 首页的返回）不销毁界面，
-     * 而是把整个任务退到后台，下次回来各分区还是原样。返回 true 表示已经处理。
-     */
-    @JvmStatic
-    fun interceptFinish(activity: Activity): Boolean {
-        if (activity.isFinishing || activity.isChangingConfigurations) return false
-        if (activity.javaClass.name !in ownActivities) return false
-        return try {
-            activity.moveTaskToBack(true)
-        } catch (e: Exception) {
-            Log.w(TAG, "moveTaskToBack failed", e)
-            false
-        }
-    }
-
-    // <editor-fold desc="Activity 跟踪">
-
-    @JvmStatic
-    fun install(application: Application) {
-        if (callbacksInstalled) return
-        synchronized(this) {
-            if (callbacksInstalled) return
-            callbacksInstalled = true
-            application.registerActivityLifecycleCallbacks(Tracker)
-        }
-    }
-
-    private object Tracker : Application.ActivityLifecycleCallbacks {
-        private fun remember(activity: Activity) {
-            live[activity.javaClass.name] = WeakReference(activity)
-        }
-
-        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = remember(activity)
-        override fun onActivityStarted(activity: Activity) = remember(activity)
-        override fun onActivityResumed(activity: Activity) {
-            remember(activity)
-            val tab = pendingTab
-            if (tab != null && activity.javaClass.name == tab.first) {
-                pendingTab = null
-                handler.postDelayed({ clickTab(activity, tab.second, retries = 0) }, 300)
+            bar.visibility = View.VISIBLE
+            if (bar.paddingBottom != nav.bottom) bar.setPadding(0, 0, 0, nav.bottom)
+            val m = bar.barPx + nav.bottom
+            if (lp.bottomMargin != m) { lp.bottomMargin = m; child.layoutParams = lp }
+            // Flutter 界面已经在底栏上面了，不要再给系统导航条留底部空白
+            val b = WindowInsetsCompat.Builder(ins)
+            for (type in intArrayOf(
+                WindowInsetsCompat.Type.systemBars(), WindowInsetsCompat.Type.navigationBars(),
+                WindowInsetsCompat.Type.tappableElement(), WindowInsetsCompat.Type.systemGestures(),
+                WindowInsetsCompat.Type.mandatorySystemGestures()
+            )) {
+                val x = ins.getInsets(type)
+                b.setInsets(type, Insets.of(x.left, x.top, x.right, 0))
             }
-            // 横竖屏、画中画切换后重新算一次底栏
-            activity.findViewById<View>(android.R.id.content)?.requestApplyInsets()
+            b.build()
         }
-
-        override fun onActivityPaused(activity: Activity) = Unit
-        override fun onActivityStopped(activity: Activity) = Unit
-        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
-        override fun onActivityDestroyed(activity: Activity) {
-            val ref = live[activity.javaClass.name]
-            if (ref?.get() === activity) live.remove(activity.javaClass.name)
-        }
+        ViewCompat.requestApplyInsets(content)
     }
-
-    // </editor-fold>
 }
 
-/**
- * 进程启动时（androidx.startup）就开始跟踪 Activity，这样 Nagisaland 主界面一打开就能记住它。
- */
-class SuiteNavInitializer : Initializer<Unit> {
-    override fun create(context: Context) {
-        (context.applicationContext as? Application)?.let(SuiteNav::install)
+/** 外观照着 Nagisaland 网页底栏（index.html 的 .nav）画的原生底栏 */
+class SuiteNavBar(ctx: Context, private val current: String, private val onPick: (String) -> Unit) : View(ctx) {
+    companion object { const val TAG = "nagisuite-navbar" }
+
+    private class Item(val key: String, val label: String, val paths: List<Path>)
+
+    private val dp = resources.displayMetrics.density
+    val barPx = (58 * dp).roundToInt()
+    private val items: List<Item>
+
+    private val bg = Paint().apply { color = Color.argb(247, 20, 20, 27) }
+    private val line = Paint().apply { color = Color.parseColor("#2a2a36") }
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeWidth = 2f; strokeCap = Paint.Cap.BUTT; strokeJoin = Paint.Join.MITER
     }
-
-    override fun dependencies(): List<Class<out Initializer<*>>> = emptyList()
-}
-
-/**
- * 原生底栏：游戏库｜小站｜漫画｜番剧｜H｜解压｜模拟器，配色照 Nagisaland 网页（深色 / 浅色跟随系统）。
- */
-@SuppressLint("ViewConstructor")
-class SuiteNavBar(private val activity: Activity, private val current: String) : LinearLayout(activity) {
-    companion object {
-        const val TAG = "nagi_suite_nav_bar"
-    }
-
-    val barHeight: Int = dp(56)
-    private var dividerColor: Int = 0
-    private val dividerPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 11.5f * dp; textAlign = Paint.Align.CENTER }
+    private val muted = Color.parseColor("#6f6f82")
+    private val on = Color.parseColor("#f0abfc")
+    private var downIdx = -1
 
     init {
-        tag = TAG
-        orientation = HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
-        val bg = if (night) Color.parseColor("#0f0f12") else Color.parseColor("#EFE9E3")
-        val text = if (night) Color.parseColor("#a1a1aa") else Color.parseColor("#57534e")
-        val textActive = if (night) Color.parseColor("#fafaf9") else Color.parseColor("#1c1917")
-        background = GradientDrawable().apply {
-            setColor(bg)
-        }
-        // 顶部细分隔线
-        setWillNotDraw(false)
-        dividerColor = if (night) Color.argb(15, 255, 255, 255) else Color.argb(15, 0, 0, 0)
-        isClickable = true // 不让点击漏到下面的内容
-        elevation = dp(8).toFloat()
+        fun p(vararg d: String) = d.map { PathParser.createPathFromPathData(it) }
+        fun rr(l: Float, t: Float, r: Float, b: Float, rad: Float) = Path().apply { addRoundRect(RectF(l, t, r, b), rad, rad, Path.Direction.CW) }
+        fun c(x: Float, y: Float, r: Float) = Path().apply { addCircle(x, y, r, Path.Direction.CW) }
+        items = listOf(
+            Item("lib", "游戏库", listOf(rr(3f, 3f, 10f, 10f, 1.5f), rr(14f, 3f, 21f, 10f, 1.5f), rr(3f, 14f, 10f, 21f, 1.5f), rr(14f, 14f, 21f, 21f, 1.5f))),
+            Item("site", "小站", p("M3 9l1.5-5h15L21 9", "M4 9v11h16V9", "M3 9h18", "M9 20v-6h6v6")),
+            Item("comic", "漫画", p("M2 5.5C4.5 4 8 4 12 6c4-2 7.5-2 10-.5V19c-2.5-1.5-6-1.5-10 .5-4-2-7.5-2-10-.5z", "M12 6v13.5")),
+            Item("anime", "番剧", listOf(rr(2f, 6f, 22f, 20f, 2.5f)) + p("M8 2l4 4 4-4", "M10 10.5v5l4.5-2.5z")),
+            Item("h", "H", p("M12 20.5s-7.5-4.6-9.3-9.2C1.4 8 3.6 4.5 7 4.5c2.1 0 3.6 1.2 5 3 1.4-1.8 2.9-3 5-3 3.4 0 5.6 3.5 4.3 6.8-1.8 4.6-9.3 9.2-9.3 9.2z")),
+            Item("extract", "解压", p("M21 8v13H3V8", "M1 3h22v5H1z", "M10 12h4")),
+            Item("emu", "模拟器", listOf(rr(2f, 7f, 22f, 19f, 4f)) + p("M7 11v4M5 13h4") + listOf(c(16f, 12f, 1f), c(18f, 14f, 1f))),
+        )
+        isClickable = true
+    }
 
-        for (section in SuiteNav.sections) {
-            val active = section.id == current
-            val item = TextView(activity).apply {
-                this.text = section.label
-                textSize = 13f
-                gravity = Gravity.CENTER
-                setTextColor(if (active) textActive else text)
-                if (active) {
-                    setTypeface(typeface, Typeface.BOLD)
-                    background = GradientDrawable(
-                        GradientDrawable.Orientation.TL_BR,
-                        intArrayOf(Color.argb(40, 232, 121, 169), Color.argb(40, 167, 139, 250))
-                    ).apply { cornerRadius = dp(10).toFloat() }
-                } else {
-                    val ripple = TypedValue()
-                    if (activity.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)) {
-                        setBackgroundResource(ripple.resourceId)
-                    }
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), barPx + paddingBottom)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val w = width.toFloat()
+        canvas.drawRect(0f, 0f, w, height.toFloat(), bg)
+        canvas.drawRect(0f, 0f, w, maxOf(1f, dp * 0.75f), line)
+        val cell = w / items.size
+        val icon = 22 * dp
+        val fm = text.fontMetrics
+        val lineH = 11.5f * dp * 1.5f
+        val total = icon + 2 * dp + lineH
+        val top = (barPx - total) / 2
+        for ((i, it) in items.withIndex()) {
+            val col = if (it.key == current) on else muted
+            val cx = cell * i + cell / 2
+            canvas.save()
+            canvas.translate(cx - icon / 2, top)
+            canvas.scale(icon / 24f, icon / 24f)
+            stroke.color = col
+            for (path in it.paths) canvas.drawPath(path, stroke)
+            canvas.restore()
+            text.color = col
+            val baseline = top + icon + 2 * dp + (lineH - (fm.descent - fm.ascent)) / 2 - fm.ascent
+            canvas.drawText(it.label, cx, baseline, text)
+        }
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        val idx = ((e.x / width) * items.size).toInt().coerceIn(0, items.size - 1)
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> downIdx = idx
+            MotionEvent.ACTION_UP -> {
+                if (idx == downIdx && e.y >= 0 && e.y <= barPx) {
+                    performClick()
+                    if (items[idx].key != current) onPick(items[idx].key)
                 }
-                contentDescription = section.label
-                setOnClickListener { SuiteNav.go(activity, section.id) }
+                downIdx = -1
             }
-            addView(item, LayoutParams(0, barHeight - dp(12), 1f).apply {
-                setMargins(dp(2), dp(6), dp(2), dp(6))
-            })
+            MotionEvent.ACTION_CANCEL -> downIdx = -1
         }
+        return true
     }
 
-    override fun onDraw(canvas: android.graphics.Canvas) {
-        super.onDraw(canvas)
-        dividerPaint.color = dividerColor
-        canvas.drawRect(0f, 0f, width.toFloat(), dp(1).toFloat().coerceAtLeast(1f), dividerPaint)
-        // 当前分区下方的渐变指示条
-        val index = SuiteNav.sections.indexOfFirst { it.id == current }
-        if (index >= 0 && childCount > index) {
-            val child = getChildAt(index)
-            val w = child.width * 0.4f
-            val left = child.left + (child.width - w) / 2
-            val top = child.bottom - dp(3).toFloat()
-            dividerPaint.shader = android.graphics.LinearGradient(
-                left, 0f, left + w, 0f,
-                Color.parseColor("#e879a9"), Color.parseColor("#a78bfa"),
-                android.graphics.Shader.TileMode.CLAMP
-            )
-            canvas.drawRoundRect(left, top, left + w, top + dp(3), dp(2).toFloat(), dp(2).toFloat(), dividerPaint)
-            dividerPaint.shader = null
-        }
-    }
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
+    override fun performClick(): Boolean = super.performClick()
 }
 
-/**
- * 中转界面（Theme.NoDisplay）：给 Nagisaland 主界面用的切换入口，Nagisaland 的 smali 不用改。
- * 认这几种写法（任选其一）：
- * - 组件名：`io.github.kyosee.venera.suite.GoComic` / `GoAnime` / `GoH`（manifest 里的 activity-alias）
- * - extra：`section` / `target` / `tab` = comic | anime | h（也认 漫画 / 番剧 / H）
- * - 链接：`nagisuite://comic`、`nagisuite://anime`、`nagisuite://h`
- */
+/** Nagisaland 网页底栏点「漫画/番剧」时启动的透明中转界面：把目标分区无动画提到最前后自己马上关掉 */
 class SuiteSwitchActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val target = resolveTarget(intent)
-        if (target != null) {
-            SuiteNav.go(this, target)
-        } else {
-            Log.w("SuiteNav", "SuiteSwitchActivity: no target in $intent")
-        }
+        SuiteNav.go(this, intent?.getStringExtra(SuiteNav.EXTRA_TO) ?: "comic")
         finish()
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
-    }
-
-    private fun resolveTarget(intent: Intent?): String? {
-        intent ?: return null
-        for (key in arrayOf("section", "target", "tab", "nagi_tab")) {
-            intent.getStringExtra(key)?.let { if (SuiteNav.section(it) != null) return it }
-        }
-        intent.data?.let { uri ->
-            listOfNotNull(uri.host, uri.lastPathSegment, uri.getQueryParameter("section"))
-                .firstOrNull { SuiteNav.section(it) != null }?.let { return it }
-        }
-        val name = intent.component?.className.orEmpty().substringAfterLast('.')
-        return when (name) {
-            "GoComic" -> SuiteNav.COMIC
-            "GoAnime" -> SuiteNav.ANIME
-            "GoH" -> SuiteNav.H
-            else -> null
-        }
     }
 }

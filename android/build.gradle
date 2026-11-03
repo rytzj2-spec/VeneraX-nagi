@@ -2,8 +2,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        // H 分区（Han1meViewer）的部分依赖只在 jitpack 上
-        maven { url "https://jitpack.io" }
+        maven { url "https://jitpack.io/" }   // H 分区（Han1meViewer）的部分依赖
     }
 }
 

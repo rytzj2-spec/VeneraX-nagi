@@ -122,7 +122,4 @@ const val UPDATE_NOTIFICATION_CHANNEL = "update_channel"
 
 // File
 
-// Nagisaland suite：和 manifest 里 HFileProvider 的 authority 一致。按运行时包名算，
-// 合并进 Nagisaland（包名 com.nagisaland.mobile）后也能对上。
-val FILE_PROVIDER_AUTHORITY: String
-    get() = "${com.yenaly.yenaly_libs.utils.applicationContext.packageName}.hanime.fileprovider"
+val FILE_PROVIDER_AUTHORITY: String get() = com.yenaly.yenaly_libs.utils.applicationContext.packageName + ".fileProvider"

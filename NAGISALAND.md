@@ -87,3 +87,16 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
   删掉 Nagisaland 主界面 onPause 里的 `WebView.pauseTimers()`（它是全局的，会冻结番剧解析用的 WebView）；
   写 comic / anime / h.json，指向上面 `SuiteSwitchActivity` 认的入口。
 - 包名 `com.nagisaland.mobile`、`nagisaland-mobile.keystore` 永远不变；密钥不进仓库。
+
+## 2026-11-03 合并：本地 v0.17.2 + 云端 suite
+两份代码都从 4093c22 分出来，各自做了 v0.15–v0.17.2。合并原则：**用户真机验证过的本地写法优先**，云端独有的修复合进来。
+- 取本地（`local-v0.17.2` 分支）：`SuiteNav.kt`（底栏图标样式、`go/attach/interceptFinish`，根页面返回回到「游戏库」，
+  `SuiteSwitchActivity` 认 extra `to`）、app 的 manifest / build.gradle / MainActivity / KazumiActivity / KazumiEngine、
+  H 模块的 manifest、build.gradle.kts、`FILE_PROVIDER_AUTHORITY = <包名>.fileProvider`、SuiteHook、SuiteCrashLog、
+  Firebase 去除方式、`libs.versions.toml`、番剧的 forMainFrameOnly / Bangumi 镜像回退写法。
+  上面「用户电脑上的部分」里 merge_venerax.py 的处理（Kazumi singleTask→singleTop 等）仍然由电脑上的脚本做。
+- 取云端：H 的 watch 页修复（标题 / 播放地址之外各部分单独失败、播放地址多重兜底、相关视频新结构）、
+  播放器备用 CDN 与 http↔https、`videoUrlRegex` 放宽、`HanimeResolution` 保留未知分辨率、`SuiteDebug` 网页存档、
+  番剧播放器网络错误不弹窗、`pubspec.lock`、关上游更新检查、CI。
+- `Parser.kt`：以云端版为底，`hanimeItemVer3` 的字段取法（播放量取最后一个 stat-item 的 ownText、时间去掉「•」、
+  标题兜底 `title` 属性）和搜索整页找新卡片用本地版；首页先按位置取各行（本地写法），一行都取不到时再按行标题认分类（云端写法）。

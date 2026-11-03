@@ -1,12 +1,10 @@
-# Nagisaland suite：H 分区（android/han、android/yenaly_libs）用的版本目录，来自 Han1meViewer。
-# 改动：Kotlin / KSP / AGP 跟 Flutter 工程一致（插件实际版本以 settings.gradle 为准），Room 2.7.2（KSP2 需要）。
 [versions]
 # Plugins
-androidGradle = "8.12.3"
+androidGradle = "8.9.0"
 appcompatVersion = "1.6.1"
-kotlin = "2.2.21"
-serializationPlugin = "2.2.21"
-ksp = "2.2.21-2.0.5"
+kotlin = "2.0.21"
+serializationPlugin = "2.0.21"
+ksp = "2.0.21-1.0.27"
 
 # Dependencies
 about = "2.5.2"

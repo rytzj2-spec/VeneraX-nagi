@@ -1,6 +1,4 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
-// Nagisaland suite：Han1meViewer 自带的工具库（Apache-2.0），插件版本统一在 settings.gradle。
+// Nagisaland suite：Han1meViewer 的 yenaly_libs（Apache-2.0），library 模块
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -9,41 +7,28 @@ plugins {
 android {
     namespace = "com.yenaly.yenaly_libs"
     compileSdk = 36
-    resourcePrefix = "yenaly_"
-
     defaultConfig {
         minSdk = 24
         consumerProguardFiles("consumer-rules.pro")
     }
-
+    buildTypes {
+        release { isMinifyEnabled = false }
+    }
     buildFeatures {
-        //noinspection DataBindingWithoutKapt
         dataBinding = true
         buildConfig = true
-    }
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    lint {
-        abortOnError = false
-        checkReleaseBuilds = false
-    }
+    resourcePrefix = "yenaly_"
 }
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
-        freeCompilerArgs.addAll(
-            "-opt-in=kotlin.RequiresOptIn",
-            "-Xskip-prerelease-check",
-            "-opt-in=kotlin.ExperimentalStdlibApi"
-        )
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        freeCompilerArgs.addAll("-opt-in=kotlin.RequiresOptIn", "-Xskip-prerelease-check", "-opt-in=kotlin.ExperimentalStdlibApi")
     }
 }
 
@@ -53,7 +38,6 @@ dependencies {
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.coroutines.android)
-
     implementation(libs.navigation.fragment.ktx)
     implementation(libs.lifecycle.livedata.ktx)
     implementation(libs.lifecycle.viewmodel.ktx)

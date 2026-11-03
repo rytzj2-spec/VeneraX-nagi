@@ -1,5 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
@@ -61,13 +60,19 @@
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
-        <!-- Nagisaland suite：番剧分区（Kazumi 2.4.2，GPL-3.0）。独立 Flutter 引擎，dart 入口 kazumiMain。
-             和其它分区在同一个任务里常驻（SuiteNav 用 REORDER_TO_FRONT 切换），所以是 singleTop、不单独设 taskAffinity -->
+        <!-- Nagisaland suite：番剧分区（Kazumi 2.4.2，GPL-3.0）。独立 Flutter 引擎，dart 入口 kazumiMain -->
+        <activity
+            android:name=".suite.SuiteSwitchActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay" />
         <activity
             android:name=".kazumi.KazumiActivity"
             android:label="番剧"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
+            android:taskAffinity="io.github.kyosee.venera.kazumi"
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"
             android:theme="@style/LaunchTheme"
@@ -88,41 +93,6 @@
                 <data android:scheme="kazumi" android:host="search"/>
             </intent-filter>
         </activity>
-        <!-- Nagisaland suite：分区切换的中转界面（Theme.NoDisplay），给 Nagisaland 主界面用，见 suite/SuiteNav.kt -->
-        <activity
-            android:name=".suite.SuiteSwitchActivity"
-            android:exported="true"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:theme="@android:style/Theme.NoDisplay">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="nagisuite" />
-            </intent-filter>
-        </activity>
-        <activity-alias
-            android:name=".suite.GoComic"
-            android:targetActivity=".suite.SuiteSwitchActivity"
-            android:exported="true" />
-        <activity-alias
-            android:name=".suite.GoAnime"
-            android:targetActivity=".suite.SuiteSwitchActivity"
-            android:exported="true" />
-        <activity-alias
-            android:name=".suite.GoH"
-            android:targetActivity=".suite.SuiteSwitchActivity"
-            android:exported="true" />
-        <!-- SuiteNav 在进程启动时开始跟踪各分区 Activity（和 H 分区共用 androidx.startup 的 provider） -->
-        <provider
-            android:name="androidx.startup.InitializationProvider"
-            android:authorities="${applicationId}.androidx-startup"
-            android:exported="false"
-            tools:node="merge">
-            <meta-data
-                android:name="io.github.kyosee.venera.suite.SuiteNavInitializer"
-                android:value="androidx.startup" />
-        </provider>
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
             android:foregroundServiceType="dataSync"
@@ -131,6 +101,7 @@
             android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="true"
+            xmlns:tools="http://schemas.android.com/tools"
             tools:ignore="Instantiatable">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
@@ -139,6 +110,7 @@
         <receiver
             android:name="com.ryanheise.audioservice.MediaButtonReceiver"
             android:exported="true"
+            xmlns:tools="http://schemas.android.com/tools"
             tools:ignore="Instantiatable">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />

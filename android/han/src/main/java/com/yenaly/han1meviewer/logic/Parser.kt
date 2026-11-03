@@ -86,28 +86,36 @@ object Parser {
         return result
     }
 
+    // 字段取法以本地 v0.17.2（真机验证过）为准，取不到时再用更宽松的兜底
     private fun hanimeItemVer3(container: Element): HanimeInfo? {
         val card = container.selectFirst("div[class*=horizontal-card]") ?: container
-        val link = card.selectFirst("a.video-link[href*=watch]")
+        val link = container.selectFirst("a.video-link")
             ?: card.selectFirst("a[href*=watch]")
             ?: container.selectFirst("a[href*=watch]")
             ?: return null
-        val videoCode = link.videoCodeFromHref() ?: return null
-        val img = card.selectFirst("img.main-thumb")
+        val videoCode = link.absUrl("href").ifEmpty { link.attr("href") }.toVideoCode()
+            ?: link.videoCodeFromHref() ?: return null
+        val img = link.selectFirst("img.main-thumb") ?: link.selectFirst("img")
             ?: card.select("img").firstOrNull { it.imageUrl()?.contains("avatar") == false }
-        val coverUrl = img?.imageUrl() ?: return null
-        val title = card.selectFirst("div.title")?.text()?.trim()?.takeIf { it.isNotEmpty() }
+        val coverUrl = img?.absUrl("src")?.ifEmpty { img.attr("src") }?.ifEmpty { null }
+            ?: img?.imageUrl() ?: return null
+        val title = link.selectFirst("div.title")?.text()
+            ?: container.attr("title").ifEmpty { null }
             ?: card.selectFirst("[class*=title]")?.text()?.trim()?.takeIf { it.isNotEmpty() }
             ?: link.attr("title").trim().takeIf { it.isNotEmpty() }
             ?: img?.attr("alt")?.trim()?.takeIf { it.isNotEmpty() }
             ?: return null
-        val duration = card.selectFirst("div.duration, [class*=duration]")?.text()?.trim()
-        val stats = card.select("div.stats-container div.stat-item")
-        val views = stats.getOrNull(1)?.text()?.trim()
+        val duration = link.selectFirst("div.duration")?.text()
+            ?: card.selectFirst("[class*=duration]")?.text()?.trim()
+        val stats = link.select("div.stats-container > div.stat-item")
+            .ifEmpty { card.select("div.stats-container div.stat-item") }
+        val views = stats.lastOrNull()?.ownText()?.trim()?.ifEmpty { null }
+            ?: stats.getOrNull(1)?.text()?.trim()
         val subtitle = container.selectFirst("div.subtitle") ?: card.selectFirst("div.subtitle")
-        val uploader = subtitle?.selectFirst("a")?.text()?.trim()
-        val uploadTime = subtitle?.selectFirst("span.subtitle-time")?.text()?.trim()
-            ?: subtitle?.selectFirst("span")?.text()?.trim()
+        val uploader = container.selectFirst("div.subtitle > a")?.text() ?: subtitle?.selectFirst("a")?.text()?.trim()
+        val uploadTime = (container.selectFirst("span.subtitle-time")?.text()
+            ?: subtitle?.selectFirst("span")?.text())
+            ?.trim()?.removePrefix("•")?.trim()?.removePrefix("•")?.trim()
         return HanimeInfo(
             title = title,
             coverUrl = coverUrl,
@@ -204,9 +212,28 @@ object Parser {
         val hanimeCurrentList = mutableListOf<HanimeInfo>()
         val hotHanimeMonthlyList = mutableListOf<HanimeInfo>()
 
-        // Nagisaland suite：2026 年首页改成很多分类行（里番、泡面番、3DCG、他们在看……），顺序也变了，
-        // 按每一行的标题 /「更多」链接认分类；认不出来的行跳过。
-        for (row in homePageParse) {
+        // Nagisaland suite：先按位置取各行（本地 v0.17.2 真机验证过的写法：旧结构解析不出来就用 2026 新卡片结构）
+        fun at(i: Int) = homePageParse.getOrNull(i)
+        fun rowItems(row: Element?, simplified: Boolean = false): MutableList<HanimeInfo> {
+            val first = runCatching {
+                if (simplified) hanimeItemsSimplified(row) else hanimeItemsVer2(row)
+            }.getOrDefault(mutableListOf())
+            return first.ifEmpty { runCatching { hanimeItemsVer3(row) }.getOrDefault(mutableListOf()) }
+        }
+        latestHanimeList += rowItems(at(0), simplified = true)
+        latestReleaseList += rowItems(at(1))
+        latestUploadList += rowItems(at(2))
+        chineseSubtitleList += rowItems(at(3))
+        hanimeTheyWatchedList += rowItems(at(4))
+        hanimeCurrentList += rowItems(at(homePageParse.size - 3))
+        hotHanimeMonthlyList += rowItems(at(homePageParse.size - 2))
+
+        // 按位置一行都取不到时（首页行的顺序又变了），再按每一行的标题 /「更多」链接认分类
+        val allEmpty = listOf(
+            latestHanimeList, latestReleaseList, latestUploadList, chineseSubtitleList,
+            hanimeTheyWatchedList, hanimeCurrentList, hotHanimeMonthlyList
+        ).all { it.isEmpty() }
+        if (allEmpty) for (row in homePageParse) {
             val label = homeRowLabel(row)
             val target = when {
                 label.contains("最新上市") -> latestReleaseList
@@ -224,22 +251,6 @@ object Parser {
                 .onFailure { Log.w("Parser", "home row [$label]", it) }
                 .getOrDefault(mutableListOf())
             target.addAll(items)
-        }
-
-        // 一个分类都没认出来：按旧版位置解析（旧网页结构）
-        val allEmpty = listOf(
-            latestHanimeList, latestReleaseList, latestUploadList, chineseSubtitleList,
-            hanimeTheyWatchedList, hanimeCurrentList, hotHanimeMonthlyList
-        ).all { it.isEmpty() }
-        if (allEmpty && homePageParse.isNotEmpty()) {
-            fun at(i: Int) = homePageParse.getOrNull(i)
-            latestHanimeList += runCatching { hanimeItemsAny(at(0)) }.getOrDefault(mutableListOf())
-            latestReleaseList += runCatching { hanimeItemsAny(at(1)) }.getOrDefault(mutableListOf())
-            latestUploadList += runCatching { hanimeItemsAny(at(2)) }.getOrDefault(mutableListOf())
-            chineseSubtitleList += runCatching { hanimeItemsAny(at(3)) }.getOrDefault(mutableListOf())
-            hanimeTheyWatchedList += runCatching { hanimeItemsAny(at(4)) }.getOrDefault(mutableListOf())
-            hanimeCurrentList += runCatching { hanimeItemsAny(at(homePageParse.size - 3)) }.getOrDefault(mutableListOf())
-            hotHanimeMonthlyList += runCatching { hanimeItemsAny(at(homePageParse.size - 2)) }.getOrDefault(mutableListOf())
         }
 
         val total = latestHanimeList.size + latestReleaseList.size + latestUploadList.size +
@@ -307,7 +318,7 @@ object Parser {
             parseBody.getElementsByClass("home-rows-videos-wrapper").firstOrNull()
 
         // Nagisaland suite：先按 2026 年的新卡片结构解析
-        val ver3 = hanimeItemsVer3(allContentsClass ?: parseBody)
+        val ver3 = hanimeItemsVer3(parseBody)  // 本地 v0.17.2：整页找新卡片
         if (ver3.isNotEmpty()) {
             Log.d("search_result", "ver3: $ver3")
             return PageLoadingState.Success(ver3)

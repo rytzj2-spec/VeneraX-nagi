@@ -45,8 +45,8 @@ dependencies:
       url: https://github.com/venera-app/flutter_desktop_webview
       path: packages/desktop_webview_window
       ref: 7801fc582ecf5a7351632887891ecf309a7b2583
-  # Nagisaland suite：用官方 6.1.5（和官方 Kazumi 一致）。VeneraX 原来的 fork（6.2.0-beta.3）会遵守
-  # UserScript.forMainFrameOnly（默认 true），番剧的视频解析脚本进不了 iframe，大量源「视频解析超时」。
+  # Nagisaland suite：改用官方 6.1.5（和官方 Kazumi 一致）。VeneraX 的 6.2 测试版 fork 会按 forMainFrameOnly
+  # 只往主页面注入脚本等，导致番剧很多源解析超时。原 fork：venera-app/flutter_inappwebview@3ef899b
   flutter_inappwebview: 6.1.5
   app_links: ^7.2.1
   sliver_tools: ^0.2.12

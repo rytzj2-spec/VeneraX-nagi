@@ -1,20 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Nagisaland suite：H 分区（Han1meViewer，Mlr111/Han1meViewer，Apache-2.0）作为 library 并入。
-  和原版的区别：
-  - <application> 上不再放 name/theme/icon 等属性（会合并到整个 App，影响漫画/番剧），
-    Application 由 app 模块的 manifest 指定为 HanimeApplication，主题写到每个 Activity 上。
-  - FileProvider 换成子类 HFileProvider + hanime_file_paths，避免和 app 自己的 FileProvider 冲突。
-  - MainActivity 去掉桌面入口，改 singleTop（由 SuiteNav 用 REORDER_TO_FRONT 切换）。
--->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" /> <!-- 兼容旧版系统 -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
 
-    <application tools:targetApi="34">
+    <!-- 暂时关闭了 enableOnBackInvokedCallback，因为稳定性还是有点差 -->
+
+    <application>
 
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
@@ -34,7 +33,7 @@
 
         <provider
             android:name=".HFileProvider"
-            android:authorities="${applicationId}.hanime.fileprovider"
+            android:authorities="${applicationId}.fileProvider"
             android:exported="false"
             android:grantUriPermissions="true">
 
@@ -45,58 +44,73 @@
         </provider>
 
         <activity
+            android:theme="@style/Theme.Hanime1"
             android:name=".ui.activity.VideoActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
-            android:enableOnBackInvokedCallback="true"
-            android:exported="false"
+            android:exported="true"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.Hanime1"
-            tools:ignore="LockedOrientationActivity" />
+            tools:ignore="LockedOrientationActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="hanime1.com" />
+                <data android:host="hanime1.me" />
+                <data android:path="/watch" />
+            </intent-filter>
+        </activity>
         <activity
             android:name=".ui.activity.MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
-            android:enableOnBackInvokedCallback="true"
-            android:exported="false"
-            android:label="H"
+            android:exported="true"
             android:launchMode="singleTop"
-            android:theme="@style/Theme.Hanime1.Main" />
+            android:theme="@style/Theme.Hanime1.Main">
+        </activity>
         <activity
+            android:theme="@style/Theme.Hanime1"
             android:name=".ui.activity.SearchActivity"
             android:configChanges="orientation|screenSize"
-            android:enableOnBackInvokedCallback="true"
-            android:exported="false"
-            android:theme="@style/Theme.Hanime1" />
+            android:exported="true">
+
+        </activity>
         <activity
             android:name=".ui.activity.PreviewActivity"
             android:configChanges="screenSize|orientation"
-            android:enableOnBackInvokedCallback="true"
-            android:exported="false"
+            android:exported="true"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.Hanime1.Preview"
-            tools:ignore="LockedOrientationActivity" />
+            tools:ignore="LockedOrientationActivity">
+
+        </activity>
         <activity
+            android:theme="@style/Theme.Hanime1"
             android:name=".ui.activity.PreviewCommentActivity"
             android:configChanges="screenSize|orientation"
-            android:enableOnBackInvokedCallback="true"
-            android:exported="false"
-            android:theme="@style/Theme.Hanime1" />
+            android:exported="true">
+
+        </activity>
         <activity
+            android:theme="@style/Theme.Hanime1"
             android:name=".ui.activity.SettingsActivity"
             android:configChanges="screenSize|orientation"
-            android:enableOnBackInvokedCallback="true"
-            android:exported="false"
-            android:theme="@style/Theme.Hanime1" />
+            android:exported="true">
+
+        </activity>
         <activity
+            android:theme="@style/Theme.Hanime1"
             android:name=".ui.activity.LoginActivity"
             android:configChanges="screenSize|orientation"
-            android:enableOnBackInvokedCallback="true"
-            android:exported="false"
-            android:theme="@style/Theme.Hanime1" />
+            android:exported="true">
+
+        </activity>
         <activity
+            android:theme="@style/Theme.Hanime1"
             android:name=".ui.activity.DownloadActivity"
             android:configChanges="orientation|screenSize"
-            android:enableOnBackInvokedCallback="true"
-            android:exported="false"
-            android:theme="@style/Theme.Hanime1" />
+            android:exported="true"></activity>
     </application>
 </manifest>

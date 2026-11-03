@@ -3,6 +3,7 @@ package com.yenaly.han1meviewer.ui.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
+import com.yenaly.han1meviewer.FirebaseConstants
 import com.yenaly.han1meviewer.Preferences
 import com.yenaly.han1meviewer.logic.NetworkRepo
 import com.yenaly.han1meviewer.logic.model.github.Latest

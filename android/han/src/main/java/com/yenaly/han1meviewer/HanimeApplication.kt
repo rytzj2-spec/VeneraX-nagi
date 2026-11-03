@@ -3,13 +3,13 @@ package com.yenaly.han1meviewer
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationManagerCompat
 import com.google.android.material.color.DynamicColors
-import com.google.android.material.color.DynamicColorsOptions
-import com.yenaly.han1meviewer.suite.SuiteCrashLog
 import com.scwang.smart.refresh.footer.ClassicsFooter
 import com.scwang.smart.refresh.header.MaterialHeader
 import com.scwang.smart.refresh.layout.SmartRefreshLayout
 import com.yenaly.han1meviewer.logic.network.HProxySelector
+import com.yenaly.han1meviewer.ui.viewmodel.AppViewModel
 import com.yenaly.yenaly_libs.base.YenalyApplication
+import com.yenaly.yenaly_libs.utils.LanguageHelper
 
 /**
  * @project Hanime1
@@ -38,12 +38,11 @@ class HanimeApplication : YenalyApplication() {
 
     override fun onCreate() {
         super.onCreate()
-        // Nagisaland suite：整个进程的 Application 就是这个类（漫画、番剧也在同一进程），
-        // 崩溃只记录不接管；动态取色只给 H 自己的界面（com.yenaly.*），不影响其它分区。
-        SuiteCrashLog.install(this)
+        com.yenaly.han1meviewer.suite.SuiteCrashLog.install(this)
+        // 只给 H 分区自己的界面套动态取色（同一进程里还有 Nagisaland / 漫画 / 番剧）
         DynamicColors.applyToActivitiesIfAvailable(
             this,
-            DynamicColorsOptions.Builder()
+            com.google.android.material.color.DynamicColorsOptions.Builder()
                 .setPrecondition { activity, _ -> activity.javaClass.name.startsWith("com.yenaly.") }
                 .build()
         )

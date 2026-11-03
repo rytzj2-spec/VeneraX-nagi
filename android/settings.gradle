@@ -20,7 +20,7 @@ plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
     id "com.android.application" version '8.12.3' apply false
     id "org.jetbrains.kotlin.android" version "2.2.21" apply false
-    // Nagisaland suite：H 分区（android/han、android/yenaly_libs）需要的插件
+    // Nagisaland suite：H 分区（Han1meViewer）用到的插件
     id "com.android.library" version '8.12.3' apply false
     id "org.jetbrains.kotlin.plugin.parcelize" version "2.2.21" apply false
     id "org.jetbrains.kotlin.plugin.serialization" version "2.2.21" apply false
@@ -28,4 +28,4 @@ plugins {
 }
 
 include ":app"
-include ":han", ":yenaly_libs"
+include ":han", ":yenaly_libs"   // H 分区（Han1meViewer，Apache-2.0）

@@ -42,12 +42,16 @@ object HCacheManager {
     /**
      * 保存 HanimeVideo 信息，用于下载后直接在 APP 内观看
      */
+    val crashlytics = com.yenaly.han1meviewer.util.NoCrashlytics
     @OptIn(ExperimentalSerializationApi::class)
     @WorkerThread
     fun saveHanimeVideoInfo(context: Context, videoCode: String, info: HanimeVideo) {
+        val crashlytics = com.yenaly.han1meviewer.util.NoCrashlytics
         val folder = getDownloadVideoFolder(context, videoCode)
         val file = File(folder, CACHE_INFO_FILE)
 
+        crashlytics.setCustomKey("video_info", info.toString())
+        crashlytics.setCustomKey("file_path", file.absolutePath)
 
         try {
             file.atomicWrite { outputStream ->
@@ -69,10 +73,14 @@ object HCacheManager {
                 return saveHanimeVideoInfo(context, videoCode, info) // ⬅️ 重试一次
             }
             Log.e("FileSave", "❌ Save video info failed: ${file.absolutePath}", e)
+            crashlytics.log("Save failed: ${e.message}")
+            crashlytics.recordException(e)
             throw e
 
         } catch (e: Exception) {
             Log.e("FileSave", "❌ Unexpected error: ${file.absolutePath}", e)
+            crashlytics.log("Unexpected error: ${e.message}")
+            crashlytics.recordException(e)
             throw e
         }
     }

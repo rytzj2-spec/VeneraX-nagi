@@ -2,57 +2,49 @@ package com.yenaly.han1meviewer.suite
 
 import android.content.Context
 import android.os.Build
-import android.util.Log
+import android.os.Environment
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
- * Nagisaland suite：整个 App 崩溃时把堆栈写到「内部存储/Nagisaland/crash/crash-*.txt」，
- * 然后交给原来的处理器（系统照常结束进程），不弹窗、不重启。
+ * Nagisaland suite：整个 App 的崩溃记录。崩溃时把堆栈写到 内部存储/Nagisaland/crash/（写不了就写到 App 私有目录），
+ * 然后交还给系统原来的处理（照常闪退）。只记录，不弹窗。
  */
 object SuiteCrashLog {
-    @Volatile
-    private var installed = false
-
     @JvmStatic
     fun install(context: Context) {
-        if (installed) return
-        installed = true
         val app = context.applicationContext
-        val previous = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            try {
-                write(app, thread, error)
-            } catch (_: Throwable) {
-            }
-            if (previous != null) {
-                previous.uncaughtException(thread, error)
-            } else {
-                android.os.Process.killProcess(android.os.Process.myPid())
-                kotlin.system.exitProcess(10)
-            }
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try { write(app, t, e) } catch (_: Throwable) {}
+            prev?.uncaughtException(t, e)
         }
     }
 
-    private fun write(context: Context, thread: Thread, error: Throwable) {
-        val dir = SuiteFiles.dir(context, "crash") ?: return
-        val trace = StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()
-        val version = try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        } catch (_: Exception) {
-            null
+    private fun write(app: Context, t: Thread, e: Throwable) {
+        val sw = StringWriter()
+        PrintWriter(sw).use { pw ->
+            pw.println("time: " + SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
+            pw.println("device: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")")
+            pw.println("thread: " + t.name)
+            pw.println()
+            e.printStackTrace(pw)
         }
-        val text = buildString {
-            appendLine("time: ${SuiteFiles.timestamp()}")
-            appendLine("package: ${context.packageName} $version")
-            appendLine("device: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
-            appendLine("thread: ${thread.name}")
-            appendLine()
-            append(trace)
+        val name = "crash-" + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + ".txt"
+        val dirs = listOf(
+            File(Environment.getExternalStorageDirectory(), "Nagisaland/crash"),
+            File(app.getExternalFilesDir(null), "crash")
+        )
+        for (d in dirs) {
+            try {
+                d.mkdirs()
+                File(d, name).writeText(sw.toString())
+                return
+            } catch (_: Throwable) {}
         }
-        File(dir, "crash-${SuiteFiles.timestamp()}.txt").writeText(text)
-        SuiteFiles.prune(dir, "crash-", 30)
-        Log.e("SuiteCrashLog", "crash written to $dir")
     }
 }

@@ -50,7 +50,6 @@ import com.yenaly.han1meviewer.Preferences.isAlreadyLogin
 import com.yenaly.han1meviewer.R
 import com.yenaly.han1meviewer.VIDEO_CODE
 import com.yenaly.han1meviewer.databinding.ActivityMainBinding
-import com.yenaly.han1meviewer.suite.SuiteHook
 import com.yenaly.han1meviewer.hanimeSpannedTitle
 import com.yenaly.han1meviewer.logic.exception.CloudFlareBlockedException
 import com.yenaly.han1meviewer.logic.state.WebsiteState
@@ -106,15 +105,6 @@ class MainActivity : YenalyActivity<ActivityMainBinding>(), DrawerListener, Tool
     override fun getViewBinding(layoutInflater: LayoutInflater): ActivityMainBinding =
         ActivityMainBinding.inflate(layoutInflater)
 
-    /**
-     * Nagisaland suite：在 H 首页按返回键时不销毁界面，整个任务退到后台，
-     * 下次点底栏切回来还是原来的状态。
-     */
-    override fun finish() {
-        if (SuiteHook.interceptFinish(this)) return
-        super.finish()
-    }
-
     override fun setUiStyle() {
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
@@ -129,9 +119,17 @@ class MainActivity : YenalyActivity<ActivityMainBinding>(), DrawerListener, Tool
     /**
      * 初始化数据
      */
+    // Nagisaland suite：底部常驻分区栏；根页面返回时回到游戏库而不是关掉
+    override fun onPostCreate(savedInstanceState: Bundle?) {
+        super.onPostCreate(savedInstanceState)
+        com.yenaly.han1meviewer.suite.SuiteHook.attach(this)
+    }
+
+    override fun finish() {
+        if (!com.yenaly.han1meviewer.suite.SuiteHook.interceptFinish(this)) super.finish()
+    }
+
     override fun initData(savedInstanceState: Bundle?) {
-        // Nagisaland suite：常驻底栏（游戏库｜小站｜漫画｜番剧｜H｜解压｜模拟器）
-        SuiteHook.attach(this)
         navHostFragment =
             supportFragmentManager.findFragmentById(R.id.fcv_main) as NavHostFragment
         navController = navHostFragment.navController

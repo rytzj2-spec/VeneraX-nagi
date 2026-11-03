@@ -31,7 +31,6 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import com.ryanheise.audioservice.AudioService
 import com.ryanheise.audioservice.AudioServiceActivity
-import io.github.kyosee.venera.suite.SuiteNav
 
 class KazumiActivity: AudioServiceActivity() {
     // 番剧分区跑在自己的 Flutter 引擎上（dart 入口 kazumiMain），和漫画分区互不影响
@@ -79,14 +78,16 @@ class KazumiActivity: AudioServiceActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         registerPipActionReceiverIfNeeded()
-        // Nagisaland suite：常驻底栏（全屏播放 / 横屏 / 画中画时自动隐藏）
-        SuiteNav.attach(this, SuiteNav.ANIME)
     }
 
-    // Nagisaland suite：番剧首页按返回键退出时，整个任务退到后台，各分区状态保留
+    // Nagisaland suite：底部常驻分区栏；根页面返回时回到游戏库而不是关掉番剧
+    override fun onPostCreate(savedInstanceState: Bundle?) {
+        super.onPostCreate(savedInstanceState)
+        io.github.kyosee.venera.suite.SuiteNav.attach(this, "anime")
+    }
+
     override fun finish() {
-        if (SuiteNav.interceptFinish(this)) return
-        super.finish()
+        if (!io.github.kyosee.venera.suite.SuiteNav.interceptFinish(this)) super.finish()
     }
 
     override fun onDestroy() {
@@ -243,8 +244,6 @@ class KazumiActivity: AudioServiceActivity() {
             inPipMode = current
             pipChannel?.invokeMethod("onModeChanged", mapOf("isInPipMode" to current))
             refreshWindowBackground()
-            // 画中画进出时重新判断底栏是否显示
-            findViewById<View>(android.R.id.content)?.requestApplyInsets()
         }
         applySystemBarsState()
     }
