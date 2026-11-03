@@ -325,6 +325,45 @@ object SuitePanels {
             SuiteEngines.groupSetting(a)) { SuiteEngines.setGroup(a, it) }
         sw("记录切换耗时", "每次切分区从点击到画面出来的毫秒数，写到 内部存储/Nagisaland/debug/perf.txt",
             SuitePerf.enabled(a)) { SuitePerf.setEnabled(a, it) }
+
+        // ---- 手势
+        root.addView(TextView(a).apply {
+            text = "手势"; setTextColor(PINK); textSize = 13.5f; paint.isFakeBoldText = true
+            setPadding(0, a.dp(14f), 0, a.dp(2f))
+        })
+        sw("左边缘右滑打开设置", "在分区首页从屏幕左边缘往右划，打开这个分区的设置（右边缘照常返回）。需要 Android 14 及以上，进了详情 / 播放 / 阅读页不会触发",
+            SuiteGesture.leftEdgeSettings(a)) { SuiteGesture.setLeftEdgeSettings(a, it) }
+        sw("底栏左滑打开设置", "在分区栏上从右往左滑打开当前分区的设置",
+            SuiteGesture.barSwipeSettings(a)) { SuiteGesture.setBarSwipeSettings(a, it) }
+        root.addView(TextView(a).apply {
+            text = "分区首页返回时"; setTextColor(TEXT); textSize = 15f
+            setPadding(0, a.dp(8f), 0, a.dp(6f))
+        })
+        val choice = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL }
+        val choiceButtons = mutableListOf<Pair<String, Button>>()
+        fun paintChoice() {
+            val cur = SuiteGesture.rootBack(a)
+            for ((k, b) in choiceButtons) {
+                val on = k == cur
+                b.setTextColor(if (on) 0xFF18181B.toInt() else TEXT)
+                b.background = GradientDrawable().apply {
+                    cornerRadius = a.dp(10f).toFloat()
+                    if (on) { colors = intArrayOf(0xFFE879A9.toInt(), 0xFFA78BFA.toInt()); orientation = GradientDrawable.Orientation.LEFT_RIGHT }
+                    else setColor(CARD)
+                }
+            }
+        }
+        for ((i, e) in SuiteGesture.ROOT_LABELS.entries.withIndex()) {
+            if (i > 0) choice.addView(View(a), LinearLayout.LayoutParams(a.dp(8f), 1))
+            val b = Button(a).apply {
+                text = e.value; isAllCaps = false; textSize = 13f
+                setOnClickListener { SuiteGesture.setRootBack(a, e.key); paintChoice() }
+            }
+            choiceButtons += e.key to b
+            choice.addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        paintChoice()
+        root.addView(choice)
         lateinit var dialog: Dialog
         root.addView(FrameLayout(a).apply { setPadding(0, a.dp(10f), 0, 0); addView(button(a, "完成", primary = true) { dialog.dismiss() }) })
         dialog = bottomDialog(a, ScrollView(a).apply { addView(root) })

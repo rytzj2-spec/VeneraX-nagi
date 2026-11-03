@@ -205,6 +205,20 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
 - App 已经在用时导入：写完文件后 `SuiteRestartActivity`（单独进程 `:nagi_restart`）杀掉主进程再打开。
 - 导出文件在 `内部存储/Nagisaland/config/<配置名>-<时间>.nagi`，可直接「分享」（FileProvider）。
 
+## 2026-11-04 v0.20.1（versionCode 56）：返回手势
+- 真机（v0.19.4）：分区首页从边缘往里划（全面屏手势 = 返回）直接跳回游戏库（`interceptFinish` 写死 `go("lib")`）；
+  番剧首页还会先弹 Kazumi 自带的「再按一次退出应用」。
+- `suite/SuiteBack.kt`：漫画 / 番剧 / 影视 / H 首页 / 主界面在 `onActivityCreated` 时挂一个 `PRIORITY_OVERLAY` 的返回回调
+  （Android 14+ 用 `OnBackAnimationCallback` 记 `BackEvent.swipeEdge`），记下边缘后照常交给界面自己处理返回
+  （ComponentActivity → `onBackPressedDispatcher.onBackPressed()`；FlutterActivity / 主界面 → `onBackPressed()`）。
+  界面退到根要关掉自己时才进 `SuiteNav.interceptFinish`（主界面是 `exitToBackground`）：1.5 秒内是左边缘 + 开关开 → 打开这个分区的设置；
+  否则按「分区首页返回时」：退到后台（默认）/ 回到游戏库 / 什么也不做。二级页面的返回不走到这里，左右都照常退一页。
+  这几个界面的 manifest 加了 `enableOnBackInvokedCallback="true"`（H 只加在首页 MainActivity）。Android 13 及以下拿不到方向，两边都按返回行为处理。
+  没用 setSystemGestureExclusionRects。
+- 番剧 `pages/menu/menu.dart`：去掉「再按一次退出」，根页面直接 `SystemNavigator.pop()` 交给原生。
+- 「流畅度设置 → 手势」：左边缘右滑打开设置（默认开）、底栏左滑打开设置（v0.19.4 的做法，默认关）、分区首页返回时（三选一）。
+  主界面网页的「更多」打开的也是这个原生面板。
+
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后
 `flutter build apk --release --target-platform android-arm64 --dart-define-from-file=dart_defines.txt`（没有 dart_defines.txt 就去掉这个参数）。

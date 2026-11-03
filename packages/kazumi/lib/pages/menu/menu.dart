@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:flutter/services.dart';
-import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/embedded_native_control_area.dart';
 import 'package:kazumi/navigation.dart';
 import 'package:kazumi/pages/menu/route_visibility.dart';
@@ -83,15 +82,8 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
       return;
     }
 
-    final now = DateTime.now();
-    final lastPromptAt = _lastExitPromptAt;
-    if (lastPromptAt == null ||
-        now.difference(lastPromptAt) > const Duration(seconds: 2)) {
-      _lastExitPromptAt = now;
-      KazumiDialog.showToast(message: '再按一次退出应用', context: context);
-      return;
-    }
-
+    // Nagisaland：统一应用里不要 Kazumi 自己的「再按一次退出」，根页面返回直接交给原生的 SuiteNav
+    // （左边缘 = 打开番剧设置；否则按「分区首页返回时」：退到后台 / 回到游戏库 / 什么也不做）
     _lastExitPromptAt = null;
     SystemNavigator.pop();
   }

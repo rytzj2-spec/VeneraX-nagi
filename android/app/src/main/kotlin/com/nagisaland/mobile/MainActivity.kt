@@ -100,6 +100,13 @@ class MainActivity : Activity() {
 
     /** 启动器网页根页面退出（galport://exit）：整个任务退到后台，各分区界面都保留 */
     fun exitToBackground() {
+        // 主界面根页面：左边缘往右划（Android 14+）= 打开当前页的设置；否则按「分区首页返回时」
+        if (io.github.kyosee.venera.suite.SuiteBack.consumeLeftEdge() &&
+            io.github.kyosee.venera.suite.SuiteGesture.leftEdgeSettings(this)) {
+            webView?.evaluateJavascript("window.__nagiOpenSettings&&window.__nagiOpenSettings()", null)
+            return
+        }
+        if (io.github.kyosee.venera.suite.SuiteGesture.rootBack(this) == io.github.kyosee.venera.suite.SuiteGesture.ROOT_NONE) return
         moveTaskToBack(true)
     }
 

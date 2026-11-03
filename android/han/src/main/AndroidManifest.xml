@@ -63,8 +63,11 @@
                 <data android:path="/watch" />
             </intent-filter>
         </activity>
+        <!-- Nagisaland：只有 H 首页打开 enableOnBackInvokedCallback，为了拿到返回手势从哪边划的（左边缘 = 打开 H 设置）。
+             返回本身由 app 模块的 SuiteBack 交回 androidx 的返回分发（和以前一样），不走 H 自己的预测返回动画 -->
         <activity
             android:name=".ui.activity.MainActivity"
+            android:enableOnBackInvokedCallback="true"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTop"

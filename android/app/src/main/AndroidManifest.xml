@@ -33,6 +33,7 @@
         <!-- Nagisaland 主界面（游戏库 / 小站 / 解压 / 模拟器，WebView + assets/launcher/），桌面入口 -->
         <activity
             android:name="com.nagisaland.mobile.MainActivity"
+            android:enableOnBackInvokedCallback="true"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/NagisaTheme"
@@ -122,6 +123,7 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity
             android:name=".kazumi.KazumiActivity"
+            android:enableOnBackInvokedCallback="true"
             android:label="番剧"
             android:exported="true"
             android:launchMode="singleTop"
@@ -148,6 +150,7 @@
         <!-- Nagisaland：影视分区（Emby / Jellyfin）。独立 Flutter 引擎，dart 入口 nagiVideoMain -->
         <activity
             android:name=".video.VideoActivity"
+            android:enableOnBackInvokedCallback="true"
             android:label="影视"
             android:exported="false"
             android:launchMode="singleTop"

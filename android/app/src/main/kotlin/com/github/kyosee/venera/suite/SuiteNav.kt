@@ -123,9 +123,21 @@ object SuiteNav {
         if (!enabled() || a.isChangingConfigurations) return false
         val nagi = nagiRef?.get()
         if (nagi != null && (nagi.isFinishing || nagi.isDestroyed)) return false
-        // gal（游戏库 / 小站 / 解压 / 模拟器）全关了：没有主界面可回，直接退到后台
-        val home = SuiteProfile.firstGal(a) ?: run { a.moveTaskToBack(true); return true }
-        go(a, home)
+        // 分区首页从左边缘往右划（Android 14+）= 打开这个分区的设置
+        val key = keyOf(a)
+        if (SuiteBack.consumeLeftEdge() && SuiteGesture.leftEdgeSettings(a) && key != null && key != "nagi") {
+            openSettings(a, key)
+            return true
+        }
+        when (SuiteGesture.rootBack(a)) {
+            SuiteGesture.ROOT_LIB -> {
+                // gal（游戏库 / 小站 / 解压 / 模拟器）全关了：没有主界面可回，退到后台
+                val home = SuiteProfile.firstGal(a)
+                if (home == null) a.moveTaskToBack(true) else go(a, home)
+            }
+            SuiteGesture.ROOT_NONE -> {}
+            else -> a.moveTaskToBack(true)   // 退到后台：下次打开各分区还在原来的位置
+        }
         return true
     }
 
@@ -145,6 +157,8 @@ object SuiteNav {
                     return
                 }
                 remember(a)
+                // 分区首页的返回手势：记下从哪边划的（左边缘 = 打开设置，见 SuiteBack）
+                if (a !is SuiteSwitchActivity && keyOf(a) != null) SuiteBack.install(a)
             }
             override fun onActivityStarted(a: Activity) { remember(a) }
             override fun onActivityResumed(a: Activity) {
@@ -459,7 +473,8 @@ class SuiteNavBar(ctx: Context, private val current: String, private val onPick:
                 removeCallbacks(longPress)
                 val dx = e.x - downX
                 val dy = e.y - downY
-                if (!longPressed && !swiped && -dx > swipePx && -dx > 1.5f * kotlin.math.abs(dy)) {
+                if (!longPressed && !swiped && SuiteGesture.barSwipeSettings(context) &&
+                    -dx > swipePx && -dx > 1.5f * kotlin.math.abs(dy)) {
                     swiped = true
                     downIdx = -1
                     (context as? Activity)?.let { SuiteNav.openSettings(it, current) }
