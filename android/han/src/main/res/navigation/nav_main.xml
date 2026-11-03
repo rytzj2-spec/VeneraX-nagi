@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_main"
+    app:startDestination="@id/nv_home_page">
+
+    <fragment
+        android:id="@id/nv_home_page"
+        android:name="com.yenaly.han1meviewer.ui.fragment.home.HomePageFragment" />
+    <fragment
+        android:id="@id/nv_watch_history"
+        android:name="com.yenaly.han1meviewer.ui.fragment.home.WatchHistoryFragment" />
+    <fragment
+        android:id="@id/nv_fav_video"
+        android:name="com.yenaly.han1meviewer.ui.fragment.home.MyFavVideoFragment" />
+    <fragment
+        android:id="@id/nv_playlist"
+        android:name="com.yenaly.han1meviewer.ui.fragment.home.MyPlaylistFragment" />
+    <fragment
+        android:id="@id/nv_watch_later"
+        android:name="com.yenaly.han1meviewer.ui.fragment.home.MyWatchLaterFragment" />
+    <fragment
+        android:id="@+id/searchFragment"
+        android:name="com.yenaly.han1meviewer.ui.fragment.search.SearchFragment"
+        tools:layout="@layout/fragment_search"/>
+    <fragment
+        android:id="@id/video_vp"
+        android:name="com.yenaly.han1meviewer.ui.fragment.video.VideoFragment"
+        android:label="Video"
+        tools:layout="@layout/fragment_video" />
+
+
+    <include app:graph="@navigation/nav_settings" />
+    <!-- 添加全局动作导航到设置导航图 -->
+    <action
+        android:id="@+id/action_global_nav_settings"
+        app:destination="@id/nav_settings" />
+
+    <!-- 添加全局动作直接导航到 HKeyframeSettingsFragment -->
+    <action
+        android:id="@+id/action_global_to_hKeyframeSettingsFragment"
+        app:destination="@id/hKeyframeSettingsFragment" />
+
+</navigation>

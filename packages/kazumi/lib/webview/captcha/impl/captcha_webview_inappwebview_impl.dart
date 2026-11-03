@@ -250,6 +250,9 @@ if (!_checkForCaptcha()) {
         UserScript(
           source: script,
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        // Nagisaland suite：VeneraX 的 flutter_inappwebview 6.2 分支会按 forMainFrameOnly（默认 true）只注入主页面，
+        // 官方 6.1.x 实际注入所有 iframe；播放器多在 iframe 里，必须显式设 false
+        forMainFrameOnly: false,
         ),
       ],
     );
@@ -346,6 +349,9 @@ $script
         UserScript(
           source: source,
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+        // Nagisaland suite：VeneraX 的 flutter_inappwebview 6.2 分支会按 forMainFrameOnly（默认 true）只注入主页面，
+        // 官方 6.1.x 实际注入所有 iframe；播放器多在 iframe 里，必须显式设 false
+        forMainFrameOnly: false,
         ),
       ],
     );
@@ -412,6 +418,9 @@ if (!_checkAndClick()) {
         UserScript(
           source: script,
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+        // Nagisaland suite：VeneraX 的 flutter_inappwebview 6.2 分支会按 forMainFrameOnly（默认 true）只注入主页面，
+        // 官方 6.1.x 实际注入所有 iframe；播放器多在 iframe 里，必须显式设 false
+        forMainFrameOnly: false,
         ),
       ],
     );

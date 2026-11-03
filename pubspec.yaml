@@ -45,11 +45,9 @@ dependencies:
       url: https://github.com/venera-app/flutter_desktop_webview
       path: packages/desktop_webview_window
       ref: 7801fc582ecf5a7351632887891ecf309a7b2583
-  flutter_inappwebview:
-    git:
-      url: https://github.com/venera-app/flutter_inappwebview
-      path: flutter_inappwebview
-      ref: 3ef899b3db57c911b080979f1392253b835f98ab
+  # Nagisaland suite：改用官方 6.1.5（和官方 Kazumi 一致）。VeneraX 的 6.2 测试版 fork 会按 forMainFrameOnly
+  # 只往主页面注入脚本等，导致番剧很多源解析超时。原 fork：venera-app/flutter_inappwebview@3ef899b
+  flutter_inappwebview: 6.1.5
   app_links: ^7.2.1
   sliver_tools: ^0.2.12
   flutter_file_dialog: ^3.3.2
@@ -109,26 +107,6 @@ dependencies:
 
 # 两个工程共用一套依赖：冲突的包统一用 VeneraX 的版本
 dependency_overrides:
-  flutter_inappwebview_platform_interface:
-    git:
-      url: https://github.com/venera-app/flutter_inappwebview
-      path: flutter_inappwebview_platform_interface
-      ref: 3ef899b3db57c911b080979f1392253b835f98ab
-  flutter_inappwebview_android:
-    git:
-      url: https://github.com/venera-app/flutter_inappwebview
-      path: flutter_inappwebview_android
-      ref: 3ef899b3db57c911b080979f1392253b835f98ab
-  flutter_inappwebview_ios:
-    git:
-      url: https://github.com/venera-app/flutter_inappwebview
-      path: flutter_inappwebview_ios
-      ref: 3ef899b3db57c911b080979f1392253b835f98ab
-  flutter_inappwebview_macos:
-    git:
-      url: https://github.com/venera-app/flutter_inappwebview
-      path: flutter_inappwebview_macos
-      ref: 3ef899b3db57c911b080979f1392253b835f98ab
   connectivity_plus: 7.0.0
   photo_view:
     git:

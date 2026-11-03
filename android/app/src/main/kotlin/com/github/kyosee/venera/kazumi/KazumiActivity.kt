@@ -80,6 +80,16 @@ class KazumiActivity: AudioServiceActivity() {
         registerPipActionReceiverIfNeeded()
     }
 
+    // Nagisaland suite：底部常驻分区栏；根页面返回时回到游戏库而不是关掉番剧
+    override fun onPostCreate(savedInstanceState: Bundle?) {
+        super.onPostCreate(savedInstanceState)
+        io.github.kyosee.venera.suite.SuiteNav.attach(this, "anime")
+    }
+
+    override fun finish() {
+        if (!io.github.kyosee.venera.suite.SuiteNav.interceptFinish(this)) super.finish()
+    }
+
     override fun onDestroy() {
         downloadDirectoryChannel?.setMethodCallHandler(null)
         downloadDirectoryChannel = null

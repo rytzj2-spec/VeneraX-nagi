@@ -17,7 +17,7 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <application
         android:label="VeneraX"
-        android:name="${applicationName}"
+        android:name="com.yenaly.han1meviewer.HanimeApplication"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true"
@@ -61,6 +61,12 @@
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
         <!-- Nagisaland suite：番剧分区（Kazumi 2.4.2，GPL-3.0）。独立 Flutter 引擎，dart 入口 kazumiMain -->
+        <activity
+            android:name=".suite.SuiteSwitchActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay" />
         <activity
             android:name=".kazumi.KazumiActivity"
             android:label="番剧"
