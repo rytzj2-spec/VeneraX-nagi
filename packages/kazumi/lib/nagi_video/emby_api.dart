@@ -164,7 +164,7 @@ class EmbyException implements Exception {
 
 class EmbyApi {
   static const clientName = 'Nagisaland';
-  static const clientVersion = '0.19.0';
+  static const clientVersion = '0.19.1';
   final MediaServer server;
   EmbyApi(this.server);
 

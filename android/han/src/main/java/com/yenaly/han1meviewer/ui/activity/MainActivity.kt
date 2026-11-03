@@ -67,7 +67,6 @@ import com.yenaly.yenaly_libs.utils.dp
 import com.yenaly.yenaly_libs.utils.showShortToast
 import com.yenaly.yenaly_libs.utils.showSnackBar
 import com.yenaly.yenaly_libs.utils.startActivity
-import com.yenaly.yenaly_libs.utils.textFromClipboard
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 
@@ -272,16 +271,8 @@ class MainActivity : YenalyActivity<ActivityMainBinding>(), DrawerListener, Tool
 //        R.id.downloadSettingsFragment
 //    )
 
-    override fun onStart() {
-        super.onStart()
-        binding.root.post {
-            textFromClipboard?.let {
-                videoUrlRegex.find(it)?.groupValues?.get(1)?.let { videoCode ->
-                    showFindRelatedLinkSnackBar(videoCode)
-                }
-            }
-        }
-    }
+    // Nagisaland：原来每次切到 H 都读一次剪贴板找影片链接，系统会弹「Nagisaland 已读取剪贴板内容」。
+    // 只在用户自己点粘贴时才读剪贴板，所以去掉这里的自动读取。
 
     override fun bindDataObservers() {
         lifecycleScope.launch {

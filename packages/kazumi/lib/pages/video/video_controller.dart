@@ -277,13 +277,15 @@ abstract class _VideoPageController with Store implements Disposable {
     if (playResume != true) {
       return 0;
     }
-    return historyController
-            .findProgress(
-              identity.bangumiItem,
-              identity.pluginName,
-              identity.episodeNumber,
-              entryKind: identity.entryKind,
-            )
+    // Nagisaland：这一集在所有源里最新的进度（换源后同一集接着播）
+    return (identity.entryKind == HistoryEntryKind.offline
+                ? historyController.findProgress(
+                    identity.bangumiItem,
+                    identity.pluginName,
+                    identity.episodeNumber,
+                    entryKind: identity.entryKind,
+                  )
+                : historyController.findProgressAnySource(identity.bangumiItem, identity.episodeNumber))
             ?.progress
             .inSeconds ??
         0;
