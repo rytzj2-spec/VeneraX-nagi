@@ -259,8 +259,10 @@ object SuitePerf {
         val resumed = SystemClock.elapsedRealtime() - p.t0
         val fv = findFlutterView(a.window.decorView)
         fun done(how: String) {
-            val shown = SystemClock.elapsedRealtime() - p.t0
-            log(a, "${p.from} → ${p.to}  画面 ${shown}ms（onResume ${resumed}ms，$how）  引擎：${p.warm}")
+            try {
+                val shown = SystemClock.elapsedRealtime() - p.t0
+                log(a, "${p.from} → ${p.to}  画面 ${shown}ms（onResume ${resumed}ms，$how）  引擎：${p.warm}")
+            } catch (_: Throwable) {}
         }
         if (fv != null) {
             if (fv.hasRenderedFirstFrame()) {
@@ -272,10 +274,16 @@ object SuitePerf {
             var fired = false
             val listener = object : FlutterUiDisplayListener {
                 override fun onFlutterUiDisplayed() {
+                    // 这个回调由引擎经 JNI 调进来，Flutter 正在遍历监听器集合：
+                    // 在这里直接 remove 会抛 ConcurrentModificationException → 引擎 CheckException 失败 → 整个 App 闪退。
+                    // 所以移除和记日志都放到下一轮消息里做，并且不让任何异常漏回 JNI。
                     if (fired) return
                     fired = true
-                    fv.removeOnFirstFrameRenderedListener(this)
-                    done("Flutter 首帧，表面重建")
+                    val self = this
+                    h.post {
+                        try { fv.removeOnFirstFrameRenderedListener(self) } catch (_: Throwable) {}
+                        try { done("Flutter 首帧，表面重建") } catch (_: Throwable) {}
+                    }
                 }
                 override fun onFlutterUiNoLongerDisplayed() {}
             }
