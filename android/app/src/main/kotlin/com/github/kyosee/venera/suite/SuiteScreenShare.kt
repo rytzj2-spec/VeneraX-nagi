@@ -163,19 +163,93 @@ object SuiteScreenShare {
     }
 }
 
-/** 透明界面：要录音权限（可选）→ 要录屏授权 → 启动共享服务 → 显示链接 */
+/**
+ * 透明界面：选「经服务器 / 局域网直连」→ 要录音权限（可选）→ 要录屏授权 → 启动对应的共享服务 → 显示链接。
+ * 正在共享时打开 = 显示链接 / 停止。
+ */
 class SuiteShareActivity : Activity() {
     companion object {
         private const val REQ_CAPTURE = 0x5348
         private const val REQ_AUDIO = 0x5349
     }
 
+    private var viaServer = true
+    private var server = SuiteRtcShare.DEFAULT_SERVER
+    private var password = ""
+    private var quality = 1
+    private val dp by lazy { resources.displayMetrics.density }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState != null) return
-        if (SuiteScreenShare.running) { SuiteScreenShare.showLinks(this) { finish() }; return }
+        when {
+            SuiteRtcShare.running -> showRtcLinks()
+            SuiteScreenShare.running -> SuiteScreenShare.showLinks(this) { finish() }
+            else -> showChooser()
+        }
+    }
+
+    private fun showChooser() {
+        server = SuiteRtcShare.server(this)
+        password = SuiteRtcShare.password(this)
+        quality = SuiteRtcShare.quality(this)
+        val root = SuitePanels.sheet(this)
+        root.addView(SuitePanels.title(this, "共享我的屏幕"))
+        fun edit(hint: String, value: String) = android.widget.EditText(this).apply {
+            this.hint = hint; setText(value); isSingleLine = true
+            setTextColor(SuitePanels.TEXT); setHintTextColor(SuitePanels.SUB); textSize = 14f
+        }
+        root.addView(TextView(this).apply {
+            text = "经服务器：对方在任何网络都能看（能直连就直连，不费服务器流量；连不上由 TURN 中转）。"
+            setTextColor(SuitePanels.SUB); textSize = 12.5f
+        })
+        val serverEdit = edit("服务器地址，例如 https://你的域名/share/", server)
+        val pwEdit = edit("房间密码（可不填；会带在分享链接里）", password)
+        root.addView(serverEdit)
+        root.addView(pwEdit)
+        val qRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, (8 * dp).toInt(), 0, 0) }
+        val qButtons = mutableListOf<android.widget.Button>()
+        fun paintQ() = qButtons.forEachIndexed { i, b ->
+            b.alpha = if (i == quality) 1f else 0.45f
+        }
+        SuiteRtcShare.QUALITY_LABELS.forEachIndexed { i, label ->
+            if (i > 0) qRow.addView(android.view.View(this), LinearLayout.LayoutParams((6 * dp).toInt(), 1))
+            val b = SuitePanels.button(this, label.substringBefore("（")) { quality = i; paintQ() }
+            qButtons += b
+            qRow.addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        paintQ()
+        root.addView(qRow)
+        lateinit var dialog: Dialog
+        var chosen = false
+        fun full() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = (10 * dp).toInt() }
+        root.addView(SuitePanels.button(this, "经服务器共享", primary = true) {
+            server = serverEdit.text.toString().trim()
+            if (server.isEmpty()) {
+                Toast.makeText(this, "先填服务器地址（问给你配置的人要，或者导入他的一键配置）", Toast.LENGTH_LONG).show(); return@button
+            }
+            if (!server.startsWith("http://", true) && !server.startsWith("https://", true)) server = "https://$server"
+            password = pwEdit.text.toString().trim()
+            SuiteRtcShare.save(this, server, password, quality)
+            viaServer = true; chosen = true; dialog.dismiss(); askAudio()
+        }, full())
+        root.addView(SuitePanels.button(this, "局域网直连（同一个 Wi-Fi / Tailscale）") {
+            viaServer = false; chosen = true; dialog.dismiss(); askAudio()
+        }, full())
+        root.addView(TextView(this).apply {
+            text = "声音（Android 10+）：录的是手机正在播放的声音。经服务器时系统会显示麦克风在用，但麦克风的声音不会发出去。" +
+                "有版权保护的视频 App 录出来是黑的。"
+            setTextColor(SuitePanels.SUB); textSize = 12f
+            setPadding(0, (10 * dp).toInt(), 0, 0)
+        })
+        dialog = SuitePanels.bottomDialog(this, android.widget.ScrollView(this).apply { addView(root) })
+        dialog.setOnDismissListener { if (!chosen) finish() }
+        dialog.show()
+    }
+
+    private fun askAudio() {
         if (Build.VERSION.SDK_INT >= 29 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            // 只用来录「手机正在播放的声音」，不录麦克风；不给也能共享画面
+            // 只用来录「手机正在播放的声音」；不给也能共享画面
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_AUDIO)
         } else {
             askCapture()
@@ -203,8 +277,14 @@ class SuiteShareActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQ_CAPTURE) return
         if (resultCode != RESULT_OK || data == null) { finish(); return }
-        val i = Intent(this, SuiteScreenShareService::class.java).putExtra("code", resultCode).putExtra("data", data)
+        val i = if (viaServer) {
+            Intent(this, SuiteRtcShareService::class.java).putExtra("data", data)
+                .putExtra("server", server).putExtra("password", password).putExtra("quality", quality)
+        } else {
+            Intent(this, SuiteScreenShareService::class.java).putExtra("code", resultCode).putExtra("data", data)
+        }
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
+        if (viaServer) { showRtcLinks(); return }
         // 等服务起来再显示链接
         val h = Handler(Looper.getMainLooper())
         var tries = 0
@@ -213,6 +293,55 @@ class SuiteShareActivity : Activity() {
             else h.postDelayed({ waitShow() }, 150)
         }
         waitShow()
+    }
+
+    /** 经服务器：等服务器分好房间号，再显示邀请链接 */
+    private fun showRtcLinks() {
+        val h = Handler(Looper.getMainLooper())
+        var tries = 0
+        fun waitRoom() {
+            val s = SuiteRtcShare.service
+            when {
+                s != null && s.room != null -> rtcDialog()
+                (s == null && tries > 6) || tries > 100 -> {
+                    if (SuiteRtcShare.service?.error == null && s == null) Toast.makeText(this, "屏幕共享没能启动", Toast.LENGTH_LONG).show()
+                    finish()
+                }
+                else -> { tries++; h.postDelayed({ waitRoom() }, 150) }
+            }
+        }
+        waitRoom()
+    }
+
+    private fun rtcDialog() {
+        val s = SuiteRtcShare.service ?: run { finish(); return }
+        val link = SuiteRtcShare.inviteLink() ?: ""
+        val root = SuitePanels.sheet(this)
+        root.addView(SuitePanels.title(this, "正在共享屏幕（经服务器）",
+            "房间 ${s.room} · ${s.viewers} 人在看。把链接发给对方，对方用浏览器打开就能看，还能发弹幕。" +
+                (if (s.audioOn) "" else "\n声音没开（Android 10+ 并允许录音才有）。")))
+        root.addView(TextView(this).apply {
+            text = link; setTextColor(SuitePanels.TEXT); textSize = 14f; setTextIsSelectable(true)
+            setPadding(0, (6 * dp).toInt(), 0, 0)
+            setOnClickListener {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("Nagisaland 屏幕共享", link))
+                Toast.makeText(this@SuiteShareActivity, "已复制", Toast.LENGTH_SHORT).show()
+            }
+        })
+        lateinit var dialog: Dialog
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, (14 * dp).toInt(), 0, 0) }
+        row.addView(SuitePanels.button(this, "停止共享") { dialog.dismiss(); SuiteRtcShare.stop(this) },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(android.view.View(this), LinearLayout.LayoutParams((8 * dp).toInt(), 1))
+        row.addView(SuitePanels.button(this, "分享链接", primary = true) {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, "来看我的手机屏幕（浏览器打开）：$link"), "分享屏幕共享链接"))
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(row)
+        dialog = SuitePanels.bottomDialog(this, root)
+        dialog.setOnDismissListener { finish() }
+        dialog.show()
     }
 }
 

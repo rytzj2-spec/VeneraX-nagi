@@ -68,3 +68,8 @@ app_chapters_raw.json
 
 # Icon generation scratch dir (scripts, source images, build log)
 .icon_work/
+
+# Nagisaland 屏幕共享部署：本地密钥文件（Cloudflare TURN Key ID / API Token），不进 Git
+server/nagi_share/nagi_share_secrets.json
+server/nagi_share/deploy_local.json
+__pycache__/

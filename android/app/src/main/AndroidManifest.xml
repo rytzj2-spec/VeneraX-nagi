@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <!-- 屏幕共享：录「手机正在播放的声音」（AudioPlaybackCapture，Android 10+），不录麦克风 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- 屏幕共享「经服务器」：WebRTC 的声音要开录音（录到的内容会换成手机正在播放的声音），前台服务要 microphone 类型 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
@@ -125,6 +127,10 @@
             android:name=".suite.SuiteScreenShareService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+        <service
+            android:name=".suite.SuiteRtcShareService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection|microphone" />
         <!-- 导入配置后重启 App：在单独的进程里杀掉主进程再打开 -->
         <activity
             android:name=".suite.SuiteRestartActivity"

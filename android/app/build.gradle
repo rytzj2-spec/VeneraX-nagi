@@ -161,5 +161,8 @@ dependencies {
     // Nagisaland：进程启动初始化（SuiteStartup）、底栏编辑列表（拖动排序）
     implementation 'androidx.startup:startup-runtime:1.2.0'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    // Nagisaland：屏幕共享「经服务器」（WebRTC：硬件 H.264、直连优先，TURN 兜底；牵线用 OkHttp WebSocket，版本和 H 模块一样）
+    implementation 'io.getstream:stream-webrtc-android:1.3.10'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
 }

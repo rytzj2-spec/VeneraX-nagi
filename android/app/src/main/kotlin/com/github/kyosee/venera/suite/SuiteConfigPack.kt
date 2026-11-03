@@ -155,6 +155,8 @@ object SuiteConfigPack {
             m.put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
             m.put("parts", parts)
             m.put("enabled", JSONArray(SuiteNavConfig.ALL.filter { it in o.enabled }))
+            // 屏幕共享「经服务器」的服务器地址（朋友导入后不用自己填）
+            SuiteRtcShare.server(ctx).takeIf { it.isNotBlank() }?.let { m.put("shareServer", it) }
             put("manifest.json", m.toString(2).toByteArray())
         }
     }
@@ -272,6 +274,9 @@ object SuiteConfigPack {
         }
 
         SuiteProfile.applyImported(ctx, manifest.enabled, manifest.name)
+        manifest.raw.optString("shareServer").takeIf { it.isNotBlank() }?.let { srv ->
+            if (SuiteRtcShare.server(ctx).isBlank()) SuiteRtcShare.save(ctx, srv, SuiteRtcShare.password(ctx), SuiteRtcShare.quality(ctx))
+        }
         SuiteConfigSync.afterImport(ctx, manifest.updateUrl.ifBlank { sourceUrl.orEmpty() }, manifest.revision)
 
         val done = mutableListOf<String>()

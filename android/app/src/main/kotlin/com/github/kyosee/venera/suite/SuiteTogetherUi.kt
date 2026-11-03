@@ -28,13 +28,14 @@ object SuiteTogetherUi {
             setTextColor(SuitePanels.SUB); textSize = 13f; setLineSpacing(0f, 1.2f)
         })
         gap()
-        root.addView(SuitePanels.button(a, if (SuiteScreenShare.running) "正在共享屏幕（看链接 / 停止）" else "共享我的屏幕", primary = true) {
+        val sharing = SuiteScreenShare.running || SuiteRtcShare.running
+        root.addView(SuitePanels.button(a, if (sharing) "正在共享屏幕（看链接 / 停止）" else "共享我的屏幕", primary = true) {
             dialog.dismiss()
-            if (SuiteScreenShare.running) SuiteScreenShare.showLinks(a) else SuiteScreenShare.start(a)
+            SuiteScreenShare.start(a)        // SuiteShareActivity：没在共享就先选「经服务器 / 局域网直连」
         }, full())
         root.addView(TextView(a).apply {
-            text = "手机自己当服务器，对方用浏览器打开链接就能看（画面 + 声音）。同一个 Wi-Fi 直接能看；不在一起时两边装 Tailscale 之类的组网工具。" +
-                "有版权保护的视频 App 录出来是黑的。"
+            text = "经服务器：对方在任何网络都能看，浏览器打开链接，能发弹幕；能直连就直连，不费服务器流量。" +
+                "局域网直连：手机自己当服务器，同一个 Wi-Fi（或 Tailscale）才能看。有版权保护的视频 App 录出来是黑的。"
             setTextColor(SuitePanels.SUB); textSize = 12f
             setPadding(0, (6 * dp).toInt(), 0, 0)
         })

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Nagisaland 屏幕共享</title>
+<style>
+:root{--bg:#0f0f12;--panel:#1c1c22;--text:#fafaf9;--sub:#a1a1aa;--pink:#e879a9;--violet:#a78bfa}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;background:#000;color:var(--text);font:14px system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden}
+#v{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+#dm{position:fixed;inset:0 0 60px 0;pointer-events:none;overflow:hidden}
+.dm{position:absolute;white-space:nowrap;font-size:20px;font-weight:600;color:#fff;text-shadow:0 0 3px #000,0 0 3px #000;will-change:transform}
+#top{position:fixed;top:0;left:0;right:0;display:flex;gap:8px;align-items:center;padding:10px 12px;background:linear-gradient(#000a,transparent);transition:opacity .3s}
+#st{flex:1;color:var(--sub);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{padding:2px 8px;border-radius:999px;background:#ffffff1a;font-size:12px;color:var(--text)}
+#bar{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:linear-gradient(transparent,#000c);transition:opacity .3s}
+#msg{flex:1;min-width:0;border:0;border-radius:10px;padding:10px 12px;background:#ffffff1f;color:var(--text);font-size:14px;outline:none}
+button{border:0;border-radius:10px;padding:10px 14px;font-size:14px;color:var(--text);background:#27272a;cursor:pointer;white-space:nowrap}
+button.p{color:#18181b;background:linear-gradient(90deg,var(--pink),var(--violet))}
+.hide{opacity:0;pointer-events:none}
+#gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:16px}
+#gate .card{width:100%;max-width:360px;background:var(--panel);border-radius:18px;padding:22px}
+#gate h1{margin:0 0 4px;font-size:20px;color:var(--pink)}
+#gate p{margin:0 0 14px;color:var(--sub);line-height:1.5}
+#gate input{width:100%;margin:0 0 10px;border:0;border-radius:10px;padding:11px 12px;background:#0f0f12;color:var(--text);font-size:15px;outline:none}
+#gate button{width:100%;margin-top:4px}
+#err{color:#f87171;min-height:1.2em;margin:4px 0 0}
+#unmute{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);padding:14px 20px;font-size:16px}
+</style></head><body>
+<video id="v" playsinline autoplay muted></video>
+<div id="dm"></div>
+<div id="top"><span id="st">连接中…</span><span class="tag" id="path" hidden></span><button id="fs">全屏</button></div>
+<button class="p" id="unmute" hidden>🔊 点一下打开声音</button>
+<div id="bar"><input id="msg" maxlength="200" placeholder="发弹幕 / 聊天（回车发送）"><button class="p" id="send">发送</button><button id="dmt">弹幕：开</button></div>
+<div id="gate" hidden><div class="card">
+  <h1>Nagisaland 屏幕共享</h1>
+  <p>输入房间号（对方发来的链接里 #r= 后面那几位）。</p>
+  <input id="gRoom" placeholder="房间号" autocomplete="off">
+  <input id="gPw" placeholder="房间密码（没有就不填）" autocomplete="off">
+  <input id="gName" placeholder="你的昵称" autocomplete="off" maxlength="24">
+  <button class="p" id="gGo">进入</button>
+  <div id="err"></div>
+</div></div>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const v=$('v'),st=$('st'),path=$('path');
+const q=new URLSearchParams(location.hash.slice(1));
+let room=(q.get('r')||'').trim().toLowerCase(), pw=q.get('p')||'';
+let name=''; try{name=localStorage.getItem('nagiShareName')||''}catch(e){}
+let ws=null,pc=null,ice=[],dmOn=true,closed=false,pendingCands=[];
+
+function status(t){st.textContent=t}
+function gate(err){$('gate').hidden=false;$('gRoom').value=room;$('gPw').value=pw;$('gName').value=name;$('err').textContent=err||''}
+$('gGo').onclick=()=>{room=$('gRoom').value.trim().toLowerCase();pw=$('gPw').value;name=$('gName').value.trim();
+  try{localStorage.setItem('nagiShareName',name)}catch(e){}
+  if(!room){$('err').textContent='请输入房间号';return}
+  $('gate').hidden=true;connect()};
+
+function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
+
+function connect(){
+  closed=false;status('连接服务器…');
+  ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/share/ws');
+  ws.onopen=()=>send({t:'join',room,pw,name});
+  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}onMsg(m)};
+  ws.onclose=()=>{if(!closed){status('和服务器的连接断了，3 秒后重连…');teardown();setTimeout(connect,3000)}};
+}
+
+async function onMsg(m){
+  if(m.t==='error'){closed=true;ws.close();gate(m.msg);return}
+  if(m.t==='joined'){ice=m.ice||[];status('已进入房间，等 '+(m.host||'房主')+' 的画面…');newPc();return}
+  if(m.t==='closed'){closed=true;status('房主结束了共享');teardown();return}
+  if(m.t==='chat'){addDanmaku((m.host?'👑 ':'')+m.name+'：'+m.text);return}
+  if(m.t==='signal'){const d=m.data||{};
+    if(d.sdp){await onOffer(d.sdp)}
+    else if(d.candidate){const c=new RTCIceCandidate(d.candidate);if(pc&&pc.remoteDescription)pc.addIceCandidate(c).catch(()=>{});else pendingCands.push(c)}
+  }
+}
+
+function newPc(){
+  teardown();
+  pc=new RTCPeerConnection({iceServers:ice});
+  pc.onicecandidate=e=>{if(e.candidate)send({t:'signal',data:{candidate:e.candidate.toJSON()}})};
+  pc.ontrack=e=>{const s=e.streams[0]||new MediaStream([e.track]);if(v.srcObject!==s)v.srcObject=s;
+    v.play().then(()=>{if(v.muted)$('unmute').hidden=false}).catch(()=>{$('unmute').hidden=false})};
+  pc.onconnectionstatechange=()=>{const s=pc.connectionState;
+    if(s==='connected'){status('正在看 · 房间 '+room);showPath()}
+    else if(s==='failed'){status('连不上房主（网络不通，服务器也没有可用的中转）')}
+    else if(s==='disconnected'){status('网络不稳，正在恢复…')}};
+}
+
+async function onOffer(sdp){
+  if(!pc)newPc();
+  await pc.setRemoteDescription({type:'offer',sdp});
+  // H.264 排第一：手机用硬件 H.264 编码（省电、清楚）
+  try{const caps=RTCRtpReceiver.getCapabilities('video');if(caps){
+    const h=caps.codecs.filter(c=>/h264/i.test(c.mimeType)),o=caps.codecs.filter(c=>!/h264/i.test(c.mimeType));
+    for(const t of pc.getTransceivers())if(t.receiver.track&&t.receiver.track.kind==='video'&&t.setCodecPreferences)t.setCodecPreferences(h.concat(o))}}catch(e){}
+  const ans=await pc.createAnswer();
+  // 声音：要立体声、高一点的码率（默认只要单声道）
+  try{const pt=(ans.sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i)||[])[1];
+    if(pt)ans.sdp=ans.sdp.replace(new RegExp('(a=fmtp:'+pt+' [^\\r\\n]*)'),m=>m.includes('stereo=1')?m:m+';stereo=1;sprop-stereo=1;maxaveragebitrate=128000')}catch(e){}
+  await pc.setLocalDescription(ans);
+  send({t:'signal',data:{sdp:pc.localDescription.sdp,type:'answer'}});
+  for(const c of pendingCands)pc.addIceCandidate(c).catch(()=>{});pendingCands=[];
+}
+
+async function showPath(){
+  try{const stats=await pc.getStats();let pair=null;const cands={};
+    stats.forEach(r=>{if(r.type==='candidate-pair'&&(r.selected||r.nominated)&&r.state==='succeeded')pair=r;if(r.type==='local-candidate'||r.type==='remote-candidate')cands[r.id]=r});
+    if(!pair)return;const l=cands[pair.localCandidateId],r=cands[pair.remoteCandidateId];
+    const relay=(l&&l.candidateType==='relay')||(r&&r.candidateType==='relay');
+    path.hidden=false;path.textContent=relay?'经中转':'直连';}catch(e){}
+}
+
+function teardown(){if(pc){try{pc.close()}catch(e){}pc=null}pendingCands=[]}
+
+$('unmute').onclick=()=>{v.muted=false;v.play().catch(()=>{});$('unmute').hidden=true};
+$('fs').onclick=()=>{const e=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else(e.requestFullscreen||e.webkitRequestFullscreen||function(){}).call(e)};
+$('dmt').onclick=()=>{dmOn=!dmOn;$('dmt').textContent='弹幕：'+(dmOn?'开':'关');if(!dmOn)$('dm').innerHTML=''};
+function sendMsg(){const t=$('msg').value.trim();if(!t)return;send({t:'chat',text:t});$('msg').value=''}
+$('send').onclick=sendMsg;$('msg').onkeydown=e=>{if(e.key==='Enter')sendMsg()};
+
+let lane=0;
+function addDanmaku(text){
+  if(!dmOn)return;const d=document.createElement('div');d.className='dm';d.textContent=text;
+  const H=$('dm').clientHeight||window.innerHeight;const lanes=Math.max(3,Math.floor(H/34)-1);
+  d.style.top=(46+(lane++%lanes)*32)+'px';$('dm').appendChild(d);
+  const w=d.offsetWidth,W=window.innerWidth,dur=Math.max(6,(W+w)/140);
+  d.animate([{transform:'translateX('+W+'px)'},{transform:'translateX('+(-w)+'px)'}],{duration:dur*1000,easing:'linear'}).onfinish=()=>d.remove();
+}
+
+// 操作栏几秒不动就淡出（打字时不淡出）
+let hideT=0;function poke(){$('top').classList.remove('hide');$('bar').classList.remove('hide');clearTimeout(hideT);
+  hideT=setTimeout(()=>{if(document.activeElement!==$('msg')){$('top').classList.add('hide');$('bar').classList.add('hide')}},4000)}
+['mousemove','touchstart','keydown'].forEach(e=>document.addEventListener(e,poke,{passive:true}));poke();
+setInterval(()=>send({t:'ping'}),25000);
+
+if(!room)gate();else{if(!name){name='观众';}connect()}
+</script>
+</body></html>
