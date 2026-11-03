@@ -1,5 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Nagisaland 主界面：游戏库认已装的模拟器 / 游戏 App、装 / 卸内置模拟器、识屏翻译（悬浮窗 + 录屏） -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
@@ -16,17 +21,42 @@
     <!-- 后台任务保活：请求系统免除电池优化，避免进入后台后进程被冻结 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <application
-        android:label="VeneraX"
+        android:label="@string/nagisa_app_name"
         android:name="com.yenaly.han1meviewer.HanimeApplication"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/nagisa_launcher"
+        android:allowBackup="true"
+        android:largeHeap="true"
+        android:hardwareAccelerated="true"
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true"
         android:extractNativeLibs="true">
+        <!-- Nagisaland 主界面（游戏库 / 小站 / 解压 / 模拟器，WebView + assets/launcher/），桌面入口 -->
+        <activity
+            android:name="com.nagisaland.mobile.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/NagisaTheme"
+            android:screenOrientation="unspecified"
+            android:hardwareAccelerated="true"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <service
+            android:name="com.nagisaland.mobile.OcrService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection"/>
+        <provider
+            android:name="com.nagisaland.mobile.Files"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
@@ -45,16 +75,6 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
-            <!-- Accept web links without embedding any comic-site domain in the
-                 app. After launch, installed source scripts decide whether a URL
-                 is supported through comic.link.domains and comic.link.linkToId. -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-            </intent-filter>
         </activity>
         <!-- Kazumi 的视频播放（media_kit）按原项目设置关闭 Impeller，走 Skia -->
         <meta-data
@@ -71,8 +91,7 @@
             android:name=".kazumi.KazumiActivity"
             android:label="番剧"
             android:exported="true"
-            android:launchMode="singleTask"
-            android:taskAffinity="io.github.kyosee.venera.kazumi"
+            android:launchMode="singleTop"
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"
             android:theme="@style/LaunchTheme"
@@ -130,10 +149,6 @@
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity-alias>
         <activity-alias
             android:name=".IconOrig"
@@ -145,10 +160,6 @@
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity-alias>
         <activity-alias
             android:name=".IconFlat"
@@ -160,10 +171,6 @@
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity-alias>
         <activity-alias
             android:name=".IconMono"
@@ -175,10 +182,6 @@
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity-alias>
         <activity-alias
             android:name=".IconIllust"
@@ -190,10 +193,6 @@
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity-alias>
         <!-- Service required by the icon-switching plugin. -->
         <service

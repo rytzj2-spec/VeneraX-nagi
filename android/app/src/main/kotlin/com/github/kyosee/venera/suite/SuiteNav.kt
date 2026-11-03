@@ -34,7 +34,8 @@ import kotlin.math.roundToInt
  * 切换时用 REORDER_TO_FRONT + 无动画把目标提到最前，状态全保留。Nagisaland 主界面自带网页底栏；
  * 漫画、番剧界面底部由这里加一条外观一样的原生底栏。
  *
- * 只在和 Nagisaland 合并后的 APK 里生效（找得到 com.nagisaland.mobile.MainActivity）；单独的 suite APK 行为不变。
+ * Nagisaland 主界面（com.nagisaland.mobile.MainActivity）现在就在本工程里（android/app/src/main/kotlin/com/nagisaland/mobile/），
+ * 不再由电脑上的 merge_venerax.py 反编译拼接；这里仍用 Class.forName 找它，H 模块通过反射调这里。
  */
 object SuiteNav {
     const val NAGI_MAIN = "com.nagisaland.mobile.MainActivity"

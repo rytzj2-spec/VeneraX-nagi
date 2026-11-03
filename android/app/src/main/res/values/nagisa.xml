@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Nagisaland 主界面（WebView 启动器）：全屏、黑底 -->
+    <string name="nagisa_app_name">Nagisaland</string>
+    <style name="NagisaTheme" parent="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

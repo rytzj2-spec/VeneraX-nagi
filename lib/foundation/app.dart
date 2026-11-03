@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart'
     show kIsWeb, TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:venera/foundation/download_network_guard.dart';
 import 'package:venera/foundation/history.dart';
@@ -19,8 +18,12 @@ import 'local.dart';
 export "widget_utils.dart";
 export "context.dart";
 
+/// Nagisaland 统一应用：安卓系统里的版本号是 Nagisaland 的（android/nagisaland.properties），
+/// 漫画部分（漫画源的 minAppVersion 检查等）要用 VeneraX 自己的版本号。跟上游同步时和 pubspec.yaml 的 version 一起改。
+const veneraXVersion = "2.3.6";
+
 class _App {
-  String _version = "0.0.0";
+  String _version = veneraXVersion;
 
   String get version => _version;
 
@@ -103,10 +106,6 @@ class _App {
     if (isAndroid) {
       externalStoragePath = (await getExternalStorageDirectory())!.path;
     }
-    try {
-      final info = await PackageInfo.fromPlatform();
-      _version = info.version;
-    } catch (_) {}
     isInitialized = true;
   }
 

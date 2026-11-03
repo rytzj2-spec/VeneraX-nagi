@@ -1,0 +1,179 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>识屏翻译</title>
+<style>
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+/* ---- 框 ---- */
+#fr { position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px solid rgba(255,111,156,.5); border-radius: 10px; box-sizing: border-box; }
+#fr.edit { border: 2px dashed #ff6f9c; background: rgba(255,111,156,.14); }
+#tx { position: absolute; top: 0; left: 0; right: 0; bottom: 0; box-sizing: border-box; padding: 10px 14px; border-radius: 10px; color: #fff; font-size: 17px; line-height: 1.55;
+  background: rgba(12,12,22,.86); white-space: pre-wrap; overflow: hidden; display: none; text-shadow: 0 1px 2px #000; }
+#tx.err { color: #ffb4c8; font-size: 14px; }
+#tip { position: absolute; top: 50%; left: 0; right: 0; transform: translateY(-50%); text-align: center; color: #fff; font-size: 14px; text-shadow: 0 1px 3px #000; display: none; pointer-events: none; }
+#grip { position: absolute; right: -2px; bottom: -2px; width: 46px; height: 46px; background: #ff6f9c; border-radius: 12px 0 10px 0; color: #fff; font-size: 22px; line-height: 46px; text-align: center; display: none; }
+#fr.edit #tip, #fr.edit #grip { display: block; }
+#fr.edit #tx { display: none !important; }
+/* 自动模式：窗口多出一条放译文，框本身只剩边线，不挡对话框 */
+#fr.pm { border: 0; }
+#box { position: absolute; left: 0; right: 0; border: 2px solid rgba(255,111,156,.5); border-radius: 10px; box-sizing: border-box; display: none; }
+#fr.pm #box { display: block; }
+/* ---- 工具条 ---- */
+#bar { position: absolute; top: 2px; left: 2px; right: 2px; bottom: 2px; display: flex; gap: 4px; align-items: center; background: rgba(22,22,32,.93); border-radius: 22px; padding: 0 5px; box-sizing: border-box; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+#bar button { flex: 1; height: 34px; border: 0; border-radius: 17px; background: #30303f; color: #fff; font-size: 13px; padding: 0; }
+#bar button.on { background: #ff6f9c; }
+#bar button:active { opacity: .7; }
+#drag { width: 24px; flex: none; color: #9a9ab0; text-align: center; font-size: 18px; line-height: 40px; }
+</style></head>
+<body>
+<script>
+'use strict';
+const W = new URLSearchParams(location.search).get('w');
+const dpr = window.devicePixelRatio || 1;
+const $ = s => document.querySelector(s);
+
+if (W === 'frame') {
+  document.body.innerHTML = '<div id="fr"><div id="box"></div><div id="tx"></div><div id="tip">拖动：移动框　拖右下角：调大小<br>对准游戏的对话框，调好点工具条上的「完成」</div><div id="grip">⤡</div></div>';
+  const fr = $('#fr'), tx = $('#tx');
+  let vis = true;
+  window.show = (text, kind) => {   // kind：0 译文，1 翻译中，2 错误
+    if (!text) { tx.style.display = 'none'; return; }
+    tx.textContent = text; tx.className = kind === 2 ? 'err' : '';
+    tx.style.display = vis ? 'block' : 'none';
+    // 字太多就缩小
+    let fs = 17; tx.style.fontSize = fs + 'px';
+    while (fs > 11 && tx.scrollHeight > tx.clientHeight + 2) { fs--; tx.style.fontSize = fs + 'px'; }
+  };
+  window.setVis = on => { vis = on; if (tx.textContent) tx.style.display = on ? 'block' : 'none'; };
+  window.edit = on => fr.classList.toggle('edit', on);
+  // 自动模式：pos = 'top' / 'bottom'（译文条在框上面还是下面），ph = 译文条高度（CSS 像素）；pos 为空 = 恢复成普通框
+  window.panel = (pos, ph) => {
+    const box = $('#box');
+    fr.classList.toggle('pm', !!pos);
+    if (!pos) { tx.style.top = tx.style.bottom = '0'; tx.style.height = ''; return; }
+    if (pos === 'top') { tx.style.top = '0'; tx.style.bottom = ''; tx.style.height = (ph - 4) + 'px'; box.style.top = ph + 'px'; box.style.bottom = '0'; }
+    else { tx.style.bottom = '0'; tx.style.top = ''; tx.style.height = (ph - 4) + 'px'; box.style.top = '0'; box.style.bottom = ph + 'px'; }
+  };
+  // 拖动、缩放由原生代码处理（用屏幕绝对坐标），这里只负责显示
+} else {
+  document.body.innerHTML = '<div id="bar"><span id="drag">⠿</span><button id="bGo">翻译</button><button id="bAuto">自动</button><button id="bEdit">调框</button><button id="bVis">隐藏</button><button id="bX">✕</button></div>';
+  let busy = false, auto = false, autoTimer = 0, vis = true, editing = false, lastText = '';
+  const toFrame = (fn, ...a) => Ocr.toFrame(fn + '(' + a.map(x => JSON.stringify(x)).join(',') + ')');
+  let seq = 0;
+  const wait = id => new Promise(res => { const t0 = Date.now(); (function p() { const r = Ocr.result(id); if (r != null) return res(r); if (Date.now() - t0 > 120000) return res(null); setTimeout(p, 60); })(); });
+  const capture = (hide, maxW) => { const id = 'c' + (++seq); Ocr.capture(id, hide, maxW || 1280); return wait(id); };
+  const http = async (url, headers, body) => { const id = 'h' + (++seq); Ocr.http(id, 'POST', url, JSON.stringify(headers), body); const r = await wait(id); return r ? JSON.parse(r) : { status: 0, error: '超时' }; };
+  const PROMPT = '图片是游戏画面里对话框的截图。识别其中的文字（通常是日文，也可能是英文），翻译成自然流畅、符合游戏语气的简体中文。如果能看出说话人名字，第一行写「名字：」再接译文。只输出译文，不要原文、不要解释。如果图里没有可读的文字，只输出：（没有文字）';
+
+  // 截图 → canvas（去掉框自己的边线）
+  const loadImg = b64 => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'data:image/jpeg;base64,' + b64; });
+  async function grab(hide, maxW) {
+    const b64 = await capture(hide, maxW);
+    if (!b64 || b64[0] === '!') throw new Error(b64 ? b64.slice(1) : '截图超时');
+    const img = await loadImg(b64), m = Math.max(2, Math.round(img.width * 0.006));
+    const c = document.createElement('canvas'); c.width = img.width - 2 * m; c.height = img.height - 2 * m;
+    c.getContext('2d').drawImage(img, m, m, c.width, c.height, 0, 0, c.width, c.height);
+    return c;
+  }
+  // 64 宽的灰度小图：用来判断对话换没换（背景轻微晃动不算）
+  function thumb(c) {
+    const w = 64, h = Math.max(8, Math.min(40, Math.round(c.height * 64 / c.width)));
+    const t = document.createElement('canvas'); t.width = w; t.height = h;
+    const g = t.getContext('2d'); g.drawImage(c, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data, out = new Uint8Array(w * h);
+    for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 30 + d[i * 4 + 1] * 59 + d[i * 4 + 2] * 11) / 100;
+    return out;
+  }
+  const changed = (a, b) => { if (!a || !b || a.length !== b.length) return 1; let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 40) n++; return n / a.length; };
+  let base = null, prev = null, showing = false, waitSince = 0;
+
+  async function callModel(cfg, dataUrl) {
+    let url = String(cfg.visionBase || '').trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
+    if (/aliyuncs\.com/i.test(url) && !/\/compatible-mode\/v1$/.test(url)) url = url.match(/^https?:\/\/[^/]+/)[0] + '/compatible-mode/v1';
+    const r = await http(url + '/chat/completions', { Authorization: 'Bearer ' + cfg.visionKey, 'Content-Type': 'application/json' },
+      JSON.stringify({ model: cfg.visionModel, temperature: 0.3, messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: dataUrl } }, { type: 'text', text: PROMPT }] }] }));
+    if (r.status !== 200) throw new Error(r.status ? 'HTTP ' + r.status + ' ' + String(r.body || '').slice(0, 160) : (r.error || '网络错误'));
+    let text = '';
+    try { text = JSON.parse(r.body).choices[0].message.content.trim(); } catch (e) {}
+    if (!text) throw new Error('没有返回译文');
+    return text;
+  }
+  const cfgNow = () => { try { return JSON.parse(Ocr.config() || '{}'); } catch (e) { return {}; } };
+
+  // 手动翻译：译文盖住对话框（截图前先藏起浮窗）
+  async function translate() {
+    if (auto) return autoTranslate(true);
+    if (busy || editing) return;
+    const cfg = cfgNow();
+    if (!cfg.visionKey) { toFrame('show', '还没设置识屏翻译用的 API Key：\n打开 Nagisaland → 游戏库右上角设置 →「AI 翻译设置…」→ 识屏翻译', 2); return; }
+    busy = true; $('#bGo').textContent = '…';
+    try {
+      const img = await capture(vis && !!lastText, 1280);
+      if (!img || img[0] === '!') { toFrame('show', '截图失败：' + (img ? img.slice(1) : '超时'), 2); return; }
+      toFrame('show', '翻译中…', 1);
+      const text = await callModel(cfg, 'data:image/jpeg;base64,' + img);
+      if (/^（没有文字）$/.test(text)) { toFrame('show', '框里没认出文字：点「调框」把框对准对话框', 2); return; }
+      lastText = text; toFrame('show', text, 0);
+    } catch (e) { toFrame('show', '翻译失败：' + e.message, 2); }
+    finally { busy = false; $('#bGo').textContent = '翻译'; }
+  }
+  // 自动：译文照样盖在对话框上。玩家点屏幕（推进对话）时，先把旧译文藏起来，露出新的原文；
+  // 等原文显示完（画面停稳）再截图翻译、盖回去。译文显示期间不截图，所以不会闪。
+  window.onOutside = () => {
+    if (!auto || editing) return;
+    if (showing) { toFrame('setVis', false); showing = false; }
+    prev = null; waitSince = Date.now();
+  };
+  async function autoStep() {
+    if (busy || editing || showing) return;
+    busy = true;
+    try {
+      const small = await grab(false, 240);      // 译文已经藏起来了，直接截
+      const t = thumb(small);
+      const moving = changed(t, prev) > 0.01; prev = t;
+      if (moving) return;                          // 还在打字 / 画面在变
+      if (base && changed(t, base) < 0.03) {       // 对话没换（点了别处），把刚才的译文放回去
+        if (lastText) { toFrame('setVis', vis); showing = true; }
+        return;
+      }
+      const cfg = cfgNow();
+      if (!cfg.visionKey) { toFrame('show', '还没设置识屏翻译用的 API Key', 2); return; }
+      $('#bGo').textContent = '…';
+      const big = await grab(false, 1280);
+      const text = await callModel(cfg, big.toDataURL('image/jpeg', 0.85));
+      base = t;
+      if (/^（没有文字）$/.test(text)) return;
+      lastText = text; toFrame('show', text, 0); toFrame('setVis', vis); showing = true;
+    } catch (e) { toFrame('show', '自动翻译出错：' + e.message, 2); showing = true; }
+    finally { busy = false; $('#bGo').textContent = '翻译'; }
+  }
+  async function autoTranslate() {   // 自动模式下点「翻译」：马上重翻当前这句
+    if (busy) return;
+    if (showing) { toFrame('setVis', false); showing = false; await new Promise(r => setTimeout(r, 120)); }
+    base = null; prev = null;
+    await autoStep(); if (!showing) { await new Promise(r => setTimeout(r, 700)); await autoStep(); }
+  }
+  function setAuto(on) {
+    if (on === auto) return;
+    auto = on; $('#bAuto').classList.toggle('on', on);
+    clearInterval(autoTimer);
+    if (on) {
+      base = null; prev = null;
+      if (lastText) { toFrame('setVis', false); }
+      showing = false;
+      autoTimer = setInterval(autoStep, 600);
+    } else if (lastText) { toFrame('setVis', vis); }
+  }
+  $('#bGo').onclick = () => translate();
+  $('#bAuto').onclick = () => setAuto(!auto);
+  $('#bEdit').onclick = () => {
+    editing = !editing;
+    $('#bEdit').textContent = editing ? '完成' : '调框'; $('#bEdit').classList.toggle('on', editing);
+    Ocr.setTouchable(editing); toFrame('edit', editing);
+  };
+  $('#bVis').onclick = () => { vis = !vis; $('#bVis').textContent = vis ? '隐藏' : '显示'; if (!auto || showing) toFrame('setVis', vis); };
+  $('#bX').onclick = () => { setAuto(false); Ocr.stop(); };
+  // 拖动工具条：最左边的 ⠿ 由原生代码处理
+}
+</script>
+</body></html>

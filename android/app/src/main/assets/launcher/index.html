@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Nagisaland</title>
+<style>
+:root {
+  --bg: #0f0f14; --panel: #181820; --card: #1d1d27; --line: #2a2a36; --text: #eeeef4; --sub: #a3a3b5; --muted: #6f6f82;
+  --a1: #8b5cf6; --a2: #ec4899; --grad: linear-gradient(135deg, var(--a1), var(--a2));
+  --nav: calc(58px + env(safe-area-inset-bottom));
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+body { padding: env(safe-area-inset-top) env(safe-area-inset-right) var(--nav) env(safe-area-inset-left); overscroll-behavior: none; }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+input, select { font: inherit; }
+[hidden] { display: none !important; }
+
+.top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 6px; padding: 12px 14px 8px; background: var(--bg); }
+.brand { flex: 1; display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 19px; line-height: 1.15; }
+.brand img { width: 36px; height: 36px; border-radius: 10px; }
+.brand small { font-size: 12px; font-weight: 500; color: var(--sub); }
+.icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--panel); }
+.icon svg { width: 20px; height: 20px; }
+.icon.spin svg { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.tools { padding: 0 14px 6px; position: sticky; top: 60px; z-index: 4; background: var(--bg); }
+.search { width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 15px; outline: none; }
+.search:focus, .field:focus { border-color: var(--a1); }
+.row { display: flex; gap: 8px; align-items: center; }
+.row .search { flex: 1; min-width: 0; }
+.chips { display: flex; gap: 8px; margin: 10px 0 4px; overflow-x: auto; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex: none; padding: 6px 13px; border-radius: 20px; background: var(--panel); color: var(--sub); font-size: 13px; }
+.chip b { font-weight: 500; opacity: .75; margin-left: 4px; }
+.chip.on { background: var(--grad); color: #fff; }
+.select { padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 13px; }
+.status { font-size: 12px; color: var(--muted); min-height: 18px; margin-top: 4px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; padding: 6px 14px 24px; }
+.card { background: var(--card); border-radius: 14px; overflow: hidden; text-align: left; display: flex; flex-direction: column; min-width: 0; padding: 0; }
+.card:active { transform: scale(.98); }
+/* 老内核里按钮不能当 flex 容器，里面的封面框宽度会变成 0 → 明确占满整张卡片 */
+.card > .cover, .card > .meta { width: 100%; box-sizing: border-box; display: block; }
+.cover { position: relative; overflow: hidden; }
+/* 用 padding 撑出比例：老 WebView（华为卓易通等）不支持 aspect-ratio，用它的话封面高度是 0 */
+.cover::before { content: ''; display: block; padding-top: 56.25%; }
+.cover.tall::before { padding-top: 75%; }
+.cover img { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .25s; }
+.cover img.loaded { opacity: 1; }
+.cover .ph { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: grid; place-items: center; font-size: 34px; font-weight: 700; color: rgba(255,255,255,.85); }
+.badge { position: absolute; left: 7px; bottom: 7px; padding: 1px 8px; border-radius: 10px; font-size: 11px; background: rgba(0,0,0,.62); color: #fff; }
+.badge.play { background: rgba(22,163,74,.9); }
+.card .meta { padding: 8px 10px 10px; min-width: 0; }
+.card .name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .sub { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.center { padding: 34px 24px; text-align: center; color: var(--sub); line-height: 1.8; }
+.center h2 { color: var(--text); font-size: 18px; margin: 12px 0 6px; }
+code, .path { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; background: var(--card); padding: 2px 6px; border-radius: 6px; color: var(--text); word-break: break-all; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 11px 18px; border-radius: 12px; background: var(--card); font-weight: 600; }
+.btn.primary { background: var(--grad); color: #fff; }
+.btn.wide { width: 100%; }
+.btn.small { padding: 6px 12px; font-size: 13px; font-weight: 500; border-radius: 9px; flex: none; }
+.btn:disabled { opacity: .5; }
+.field { width: 100%; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 15px; outline: none; margin: 6px 0; }
+.form { max-width: 420px; margin: 0 auto; padding: 24px 20px; }
+.form .err { color: #f87171; font-size: 13px; min-height: 20px; }
+.page { padding: 4px 14px 20px; }
+
+.mask { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 20; background: rgba(0,0,0,.55); opacity: 0; pointer-events: none; transition: opacity .2s; }
+.mask.show { opacity: 1; pointer-events: auto; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; max-height: 88vh; overflow-y: auto; background: var(--panel); border-radius: 20px 20px 0 0;
+  transform: translateY(105%); transition: transform .25s ease; padding-bottom: calc(18px + env(safe-area-inset-bottom)); }
+.sheet.tall { max-height: 94vh; }
+.sheet { visibility: hidden; transition: transform .25s ease, visibility 0s linear .25s; }
+.sheet.show { transform: none; visibility: visible; transition: transform .25s ease; }
+@media (min-width: 700px) { .sheet { left: 50%; right: auto; width: 640px; margin-left: -320px; } }
+.sheet .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 8px auto 4px; }
+.sheet .hero { width: 100%; aspect-ratio: 16 / 9; max-height: 34vh; object-fit: cover; display: block; }
+.sheet .body { padding: 14px 18px; }
+.sheet h3 { margin: 0; font-size: 18px; line-height: 1.4; }
+.line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; color: var(--sub); font-size: 13px; }
+.tag { padding: 1px 9px; border-radius: 10px; font-size: 12px; background: var(--card); color: var(--sub); }
+.tag.ok { background: rgba(34,197,94,.15); color: #4ade80; }
+.tag.warn { background: rgba(245,158,11,.15); color: #fbbf24; }
+.actions { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 8px; }
+.hint { font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+.hint b { color: var(--text); }
+ol.steps { padding-left: 20px; margin: 8px 0; color: var(--sub); font-size: 13px; line-height: 1.7; }
+.app-row, .root-row, .pw-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.app-row .n, .pw-row .n { flex: 1; min-width: 0; }
+.app-row .n small { display: block; color: var(--muted); font-size: 11.5px; }
+.pw-row .n { font-size: 13px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.root-row .path { flex: 1; }
+.sec { font-size: 12px; color: var(--muted); margin: 18px 0 4px; }
+.add-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+.add-row input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 13px; outline: none; }
+
+/* 小站 */
+.link-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.link-row .n { flex: 1; min-width: 0; }
+.link-row .url { font-size: 12px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.link-row small { color: var(--muted); font-size: 12px; }
+.pan { flex: none; padding: 3px 9px; border-radius: 8px; background: rgba(59,130,246,.18); color: #93c5fd; font-size: 12px; font-weight: 600; }
+.code { padding: 1px 8px; border-radius: 7px; background: var(--card); color: var(--sub); font-size: 12px; margin-top: 3px; }
+.code b { color: #fbbf24; }
+.unzip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0; font-size: 13px; }
+.unzip b { color: #fbbf24; }
+.raw summary { cursor: pointer; color: var(--muted); font-size: 12.5px; padding: 6px 0; }
+.raw pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; background: var(--card); padding: 10px; border-radius: 10px; color: var(--sub); max-height: 40vh; overflow: auto; }
+.shots { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
+.shots img { height: 120px; border-radius: 8px; flex: none; }
+.desc { white-space: pre-wrap; font-size: 13px; color: var(--sub); line-height: 1.75; margin: 8px 0; }
+.userchip { flex: none; max-width: 42vw; padding: 7px 11px; border-radius: 10px; background: var(--panel); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 解压 */
+.ex-card { background: var(--card); border-radius: 14px; padding: 12px 14px; margin: 10px 0; }
+.ex-name { font-weight: 600; word-break: break-all; }
+
+/* 底部导航 */
+.nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; height: var(--nav); padding-bottom: env(safe-area-inset-bottom);
+  display: flex; background: rgba(20,20,27,.97); border-top: 1px solid var(--line); }
+.nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11.5px; color: var(--muted); }
+.nav svg { width: 22px; height: 22px; }
+.nav button.on { color: #f0abfc; }
+
+.toast { position: fixed; left: 50%; bottom: calc(var(--nav) + 18px); transform: translateX(-50%) translateY(20px); z-index: 30; background: rgba(40,40,52,.97);
+  color: #fff; padding: 9px 16px; border-radius: 12px; font-size: 13px; opacity: 0; transition: .2s; pointer-events: none; max-width: 86vw; text-align: center; }
+.toast.show { opacity: 1; transform: translateX(-50%); }
+.bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 10px 0 6px; }
+.secret { -webkit-text-security: disc; }
+.ex-log { max-height: 150px; overflow-y: auto; font-size: 12px; color: var(--sub, #999); line-height: 1.6; margin: 4px 0 8px; }
+.bar i { display: block; height: 100%; background: var(--grad); transition: width .2s; }
+#sheet .sub { color: var(--muted); font-size: 12.5px; }
+#coverStatus { margin-left: 8px; align-self: center; }
+.chip.sort { margin-left: auto; background: transparent; border: 1px solid var(--line); }
+.dir-list { max-height: 48vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; margin: 8px 0; }
+.dir-row { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); background: none; color: var(--text); font-size: 15px; }
+.dir-row:last-child { border-bottom: 0; }
+.app-pick { display: flex; gap: 12px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.app-pick img { width: 42px; height: 42px; border-radius: 10px; background: var(--card); flex: none; }
+.app-pick .n { flex: 1; min-width: 0; }
+.app-pick .n small { display: block; color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.btn.danger { color: #ff8a8a; }
+.cover.app img { object-fit: contain; padding: 14% 30%; box-sizing: border-box; }
+#appQ, #renameInput { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 14px; outline: none; }
+.sheet .hero.app { object-fit: contain; aspect-ratio: auto; height: 150px; padding: 22px 0 6px; box-sizing: content-box; background: var(--panel) !important; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand"><img src="logo.png" alt=""><div>Nagisaland<br><small id="tabTitle">游戏库</small></div></div>
+  <button class="icon" id="btnAdd" aria-label="添加游戏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button class="icon" id="btnRefresh" aria-label="重新扫描"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
+  <button class="icon" id="btnSettings" aria-label="游戏目录设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+</header>
+
+<section id="viewPerm" class="center" hidden>
+  <img src="logo.png" alt="" width="84" style="border-radius:22px">
+  <h2>需要文件访问权限</h2>
+  <div>Nagisaland 要读取手机里的游戏和压缩包才能工作。<br>点下面的按钮，在设置里打开「允许管理所有文件」，再返回这里。</div>
+  <p><button class="btn primary" id="btnPerm">去授予权限</button></p>
+</section>
+
+<section id="viewNoNative" class="center" hidden>
+  <h2>请在 Nagisaland App 里打开</h2>
+</section>
+
+<!-- 游戏库 -->
+<section id="tabLib" class="tab" hidden>
+  <div class="tools">
+    <input class="search" id="q" type="search" placeholder="搜索游戏" autocomplete="off">
+    <div class="chips" id="chips">
+      <button class="chip on" data-f="all">全部<b></b></button>
+      <button class="chip" data-f="play">直接玩<b></b></button>
+      <button class="chip" data-f="app">用其它 App<b></b></button>
+      <button class="chip" data-f="recent">最近玩过<b></b></button>
+      <button class="chip sort" id="sortChip" title="排序"></button>
+    </div>
+    <div class="status" id="libStatus"></div>
+  </div>
+  <main class="grid" id="grid"></main>
+  <section class="center" id="empty" hidden>
+    <h2>还没有游戏</h2>
+    <div>把整个游戏文件夹拷到手机的<br><code id="defRoot"></code><br>里面（每个游戏一个文件夹），然后点右上角刷新。</div>
+    <p class="hint">也可以去「小站」下载，再到「解压」页一键入库。</p>
+  </section>
+</section>
+
+<!-- 小站 -->
+<section id="tabSite" class="tab" hidden>
+  <div id="siteLogin" class="form" hidden>
+    <h2 style="margin:0 0 6px">登录小站</h2>
+    <div class="hint">和电脑版 Nagisaland 用同一个账号。</div>
+    <input class="field" id="gsBase" placeholder="小站地址，例：https://example.com" autocomplete="url" inputmode="url">
+    <input class="field" id="gsUser" placeholder="账号" autocomplete="username">
+    <input class="field" id="gsPass" type="password" placeholder="密码" autocomplete="current-password">
+    <div class="err" id="gsErr"></div>
+    <button class="btn primary wide" id="gsLoginBtn">登录</button>
+  </div>
+  <div id="siteBrowse" hidden>
+    <div class="tools">
+      <div class="row"><input class="search" id="gsQ" type="search" placeholder="搜索小站资源" autocomplete="off"><button class="btn small primary" id="gsSearchBtn">搜索</button></div>
+      <div class="row" style="margin-top:8px">
+        <select class="select" id="gsSection"><option value="game">游戏</option><option value="comic">漫画</option><option value="anime">动画</option></select>
+        <select class="select" id="gsSort"><option value="new">最新</option><option value="hot">最热</option><option value="rating">评分</option><option value="size_down">体积大→小</option><option value="size_up">体积小→大</option></select>
+        <label class="deepchk" style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--sub);white-space:nowrap"><input type="checkbox" id="gsDeep" style="width:auto;margin:0">含简介</label>
+        <span style="flex:1"></span><button class="userchip" id="gsUserChip">账号</button>
+      </div>
+      <div class="status" id="gsStatus"></div>
+    </div>
+    <main class="grid" id="gsGrid"></main>
+    <div style="padding:0 14px 20px"><button class="btn wide" id="gsMore" hidden>加载更多</button></div>
+  </div>
+</section>
+
+<!-- 解压 -->
+<section id="tabExtract" class="tab page" hidden>
+  <div class="line" id="exZ"></div>
+  <div class="actions" style="margin-top:6px">
+    <button class="btn primary wide" id="exFind">解压好了？找解压出来的游戏</button>
+    <div class="row"><button class="btn small" id="exRefresh">重新扫描压缩包</button><button class="btn small" data-a="addDl">下载目录…</button><span class="status" id="exStatus"></span></div>
+  </div>
+  <div id="exList"></div>
+  <div id="exPw"></div>
+  <div class="hint" style="margin-top:14px">流程：在「小站」获取链接并用网盘下载 → 这里点「解压」→「一键解压到游戏库」：自动改回伪装后缀、认分卷、依次试解压密码、压缩包套压缩包也一路解到底、删广告、去掉多余的文件夹层、用小站的名字和封面入库。用别的 App 解压的，回来点「找解压出来的游戏」也能入库。</div>
+</section>
+
+<!-- 模拟器 -->
+<section id="tabEmu" class="tab page" hidden>
+  <div class="hint" id="emuNote" style="margin:4px 0 6px"></div>
+  <div id="emuList"></div>
+  <div class="hint" style="margin-top:14px">已安装的模拟器会被自动识别；游戏库里点游戏时会直接调起对应的 App。</div>
+</section>
+
+<nav class="nav" id="nav" hidden>
+  <button data-tab="lib" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>游戏库</button>
+  <button data-tab="site"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M3 9h18"/><path d="M9 20v-6h6v6"/></svg>小站</button>
+  <button data-comic hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 5.5C4.5 4 8 4 12 6c4-2 7.5-2 10-.5V19c-2.5-1.5-6-1.5-10 .5-4-2-7.5-2-10-.5z"/><path d="M12 6v13.5"/></svg>漫画</button>
+  <button data-anime hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="14" rx="2.5"/><path d="M8 2l4 4 4-4"/><path d="M10 10.5v5l4.5-2.5z"/></svg>番剧</button>
+  <button data-h hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20.5s-7.5-4.6-9.3-9.2C1.4 8 3.6 4.5 7 4.5c2.1 0 3.6 1.2 5 3 1.4-1.8 2.9-3 5-3 3.4 0 5.6 3.5 4.3 6.8-1.8 4.6-9.3 9.2-9.3 9.2z"/></svg>H</button>
+  <button data-tab="extract"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>解压</button>
+  <button data-tab="emu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="12" rx="4"/><path d="M7 11v4M5 13h4"/><circle cx="16" cy="12" r="1"/><circle cx="18" cy="14" r="1"/></svg>模拟器</button>
+</nav>
+
+<div class="mask" id="mask"></div>
+<div class="sheet" id="sheet"></div>
+<div class="toast" id="toast"></div>
+
+<script src="galsite-core.js"></script>
+<script src="core.js"></script>
+<script src="unpack.js"></script>
+<script src="library.js"></script>
+<script src="site.js"></script>
+<script src="extract.js"></script>
+<script src="translate.js"></script>
+<script src="emulators.js"></script>
+<script>
+'use strict';
+const App = (() => {
+  const TABS = { lib: ['#tabLib', '游戏库'], site: ['#tabSite', '小站'], extract: ['#tabExtract', '解压'], emu: ['#tabEmu', '模拟器'] };
+  let cur = null;
+  function tab(name) {
+    if (!TABS[name]) name = 'lib';
+    cur = name;
+    for (const [k, v] of Object.entries(TABS)) $(v[0]).hidden = k !== name;
+    document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+    $('#tabTitle').textContent = TABS[name][1];
+    $('#btnRefresh').hidden = $('#btnSettings').hidden = $('#btnAdd').hidden = name !== 'lib';
+    closeSheet();
+    window.scrollTo(0, 0);
+    store.set('tab', name);
+    if (name === 'site') Site.show();
+    else if (name === 'extract') Extract.show();
+    else if (name === 'emu') Emulators.show();
+  }
+  function showView(id) { for (const v of ['#viewPerm', '#viewNoNative']) $(v).hidden = v !== id; }
+
+  function start() {
+    if (!N) { showView('#viewNoNative'); return; }
+    try { N.setOrientation(-1); } catch (e) {}
+    try { ROOT = N.storageRoot() || ROOT; } catch (e) {}
+    if (!N.hasStorage()) { showView('#viewPerm'); $('#nav').hidden = true; return; }
+    showView(null);
+    $('#nav').hidden = false;
+    Library.start();
+    tab(store.get('tab', 'lib'));
+  }
+
+  Library.init(); Site.init(); Extract.init(); Emulators.init();
+  $('#btnPerm').onclick = () => N.requestStorage();
+  $('#mask').onclick = closeSheet;
+  $('#nav').onclick = e => {
+    if (e.target.closest('button[data-comic]')) { openComic(); return; }
+    if (e.target.closest('button[data-anime]')) { openAnime(); return; }
+    if (e.target.closest('button[data-h]')) { openH(); return; }
+    const b = e.target.closest('button[data-tab]'); if (b) tab(b.dataset.tab);
+  };
+  // 漫画：同一个 App 里的 VeneraX 界面（merge_venerax.py 合并进来时才有 comic.json）
+  let comic = null;
+  fetch('comic.json').then(r => r.ok ? r.json() : null).then(j => { comic = j; const b = $('#nav button[data-comic]'); if (b) b.hidden = !j; }).catch(() => {});
+  function openComic() {
+    if (!comic || !N) return;
+    const err = N.launchIntent(JSON.stringify({ pkg: 'com.nagisaland.mobile', cls: comic.cls, action: 'android.intent.action.MAIN', extras: comic.extras || undefined }));
+    if (err) toast('打不开漫画：' + err, 4000);
+  }
+  // 番剧：同一个 App 里的 Kazumi 界面（suite APK 合并进来时才有 anime.json）
+  let anime = null;
+  fetch('anime.json').then(r => r.ok ? r.json() : null).then(j => { anime = j; const b = $('#nav button[data-anime]'); if (b) b.hidden = !j; }).catch(() => {});
+  function openAnime() {
+    if (!anime || !N) return;
+    const err = N.launchIntent(JSON.stringify({ pkg: 'com.nagisaland.mobile', cls: anime.cls, action: 'android.intent.action.MAIN', extras: anime.extras || undefined }));
+    if (err) toast('打不开番剧：' + err, 4000);
+  }
+  // H：同一个 App 里的 Han1meViewer 界面（suite APK 带 H 分区时才有 h.json）
+  let hsec = null;
+  fetch('h.json').then(r => r.ok ? r.json() : null).then(j => { hsec = j; const b = $('#nav button[data-h]'); if (b) b.hidden = !j; }).catch(() => {});
+  function openH() {
+    if (!hsec || !N) return;
+    const err = N.launchIntent(JSON.stringify({ pkg: 'com.nagisaland.mobile', cls: hsec.cls, action: 'android.intent.action.MAIN', extras: hsec.extras || undefined }));
+    if (err) toast('打不开 H：' + err, 4000);
+  }
+
+  // 从系统设置 / 别的 App 回来
+  window.__nagisaResume = () => {
+    if (!N) return;
+    refreshApps();
+    if (!$('#viewPerm').hidden) { if (N.hasStorage()) start(); return; }
+    Library.onResume();
+    if (cur === 'emu') Emulators.render();
+    if (cur === 'extract') Extract.scan();
+  };
+  // 返回键
+  window.__galportBack = () => {
+    if (sheetOpen()) { closeSheet(); return; }
+    if (cur === 'lib' && Library.back()) return;
+    if (cur && cur !== 'lib') { tab('lib'); return; }
+    location.href = 'galport://exit';
+  };
+  return { tab, start };
+})();
+App.start();
+</script>
+</body>
+</html>

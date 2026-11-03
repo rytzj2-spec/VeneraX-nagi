@@ -1,7 +1,9 @@
-# Nagisaland suite（suite 分支）：漫画 VeneraX + 番剧 Kazumi + H（Han1meViewer）合在一个工程里，编译 Android arm64-v8a。
-# - 推到 suite 自动编译；也可以在 Actions 里手动运行（可选任意分支）。
+# Nagisaland 手机版（suite 分支）：Nagisaland 主界面 + 漫画 VeneraX + 番剧 Kazumi + H（Han1meViewer）
+# 一个工程编出完整的 com.nagisaland.mobile，Android arm64-v8a。
+# - 推到 suite / unify-* 自动编译；也可以在 Actions 里手动运行（可选任意分支）。
 # - APK 在该次运行的 Artifacts（Nagisaland-suite-arm64），suite 分支的构建还会推到 apk-suite 分支。
-# - 用一次性的临时密钥签名；正式签名（nagisaland-mobile.keystore）在用户电脑上用 merge_venerax.py 合并时做，密钥不进仓库。
+# - 用一次性的临时密钥签名；正式签名（nagisaland-mobile.keystore）和内置模拟器 APK 在用户电脑上用
+#   Nagisaland-Mobile 仓库的 sign_release.py 加，密钥不进仓库。
 # - 番剧的弹幕 / Bangumi 镜像密钥：在仓库 Settings → Secrets and variables → Actions 里加
 #   DANDANAPI_APPID、DANDANAPI_KEY（弹弹play 开放平台）、KAZUMI_APPID、KAZUMI_KEY（可选），
 #   有就以 --dart-define 传入，没有就不传（Bangumi 自动走官方接口，弹幕不可用）。
@@ -10,7 +12,7 @@ run-name: Nagisaland suite build (${{ github.ref_name }} ${{ github.sha }})
 on:
   workflow_dispatch:
   push:
-    branches: [suite]
+    branches: [suite, "unify-*"]
     paths-ignore:
       - "**.md"
       - "doc/**"
@@ -69,7 +71,8 @@ jobs:
           version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml); version="${version%%+*}"
           kz=$(sed -n 's/^version:[[:space:]]*//p' packages/kazumi/pubspec.yaml); kz="${kz%%+*}"
           mkdir -p out
-          cp build/app/outputs/apk/release/*arm64-v8a*.apk "out/NagiSuite-vx${version}-kz${kz}-arm64-v8a.apk"
+          nagi=$(sed -n 's/^versionName=//p' android/nagisaland.properties)
+          cp build/app/outputs/apk/release/*arm64-v8a*.apk "out/Nagisaland-v${nagi}-vx${version}-kz${kz}-arm64-v8a.apk"
           ls -la out
       - uses: actions/upload-artifact@v7
         with:

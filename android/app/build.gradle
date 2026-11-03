@@ -25,6 +25,10 @@ if (flutterVersionName == null) {
     flutterVersionName = "1.0"
 }
 
+// Nagisaland 的版本号（android/nagisaland.properties）
+def nagiProperties = new Properties()
+rootProject.file("nagisaland.properties").withReader("UTF-8") { nagiProperties.load(it) }
+
 def keystorePropertiesFile = rootProject.file("key.properties")
 def keystoreProperties = new Properties()
 if (!keystorePropertiesFile.exists()) {
@@ -93,13 +97,14 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.kyosee.venera"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutterVersionCode.toInteger()
-        versionName = flutterVersionName
+        // Nagisaland 统一应用：包名 com.nagisaland.mobile（覆盖安装原来的 Nagisaland，数据保留）。
+        // 代码的命名空间仍是 io.github.kyosee.venera，provider 的 authority 都用 ${applicationId} 自动跟着包名走。
+        applicationId = "com.nagisaland.mobile"
+        minSdk = Math.max(flutter.minSdkVersion, 24)
+        // 保持 34（以前合并版 APK 用的就是 Nagisaland 的 34，真机验证过）。35+ 会强制全屏绘制，打乱各分区底栏和沉浸模式
+        targetSdk = 34
+        versionCode = nagiProperties["versionCode"].toInteger()
+        versionName = nagiProperties["versionName"]
     }
 
     buildTypes {
@@ -121,23 +126,11 @@ android {
         }
     }
 
+    // 只自己用：各架构的包用同一个 versionCode（不再按架构 ×10 加后缀）
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             def abi = output.getFilter(com.android.build.OutputFile.ABI)
-            if (variant.buildType.name == "release") {
-                if (abi != null) {
-                    outputFileName = "VeneraX-${variant.versionName}-${abi}.apk"
-                    def abiVersionCode = project.ext.abiCodes.get(abi)
-                    if (abiVersionCode != null) {
-                        versionCodeOverride = variant.versionCode * 10 + abiVersionCode
-                    }
-                } else {
-                    outputFileName = "VeneraX-${variant.versionName}.apk"
-                    versionCodeOverride = variant.versionCode * 10
-                }
-            } else if (variant.buildType.name == "debug") {
-                versionCodeOverride = variant.versionCode * 10 + 4
-            }
+            outputFileName = "Nagisaland-${variant.versionName}" + (abi != null ? "-${abi}" : "") + ".apk"
         }
     }
 
