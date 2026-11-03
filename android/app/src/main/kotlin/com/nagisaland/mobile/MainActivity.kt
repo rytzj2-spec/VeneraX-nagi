@@ -84,6 +84,8 @@ class MainActivity : Activity() {
         wv.loadUrl(LAUNCHER)
         // 空闲时后台预热番剧、影视的 Flutter 引擎，切过去不用现建
         io.github.kyosee.venera.suite.SuiteEngines.schedulePrewarm(this)
+        // 订阅了配置链接：后台看看有没有新配置（6 小时最多一次）
+        io.github.kyosee.venera.suite.SuiteConfigSync.checkInBackground(this)
     }
 
     @Suppress("DEPRECATION")

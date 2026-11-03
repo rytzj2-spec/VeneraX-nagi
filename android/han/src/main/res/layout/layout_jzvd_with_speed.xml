@@ -144,6 +144,18 @@
             android:textSize="18sp"
             tools:text="[中字候补] 一眼顶针，鉴定为纯纯的初生" />
 
+        <!-- Nagisaland：一起看（SyncPlay 同步播放） -->
+        <TextView
+            android:id="@+id/tv_together"
+            android:layout_width="wrap_content"
+            android:layout_height="60dp"
+            android:layout_marginEnd="4dp"
+            android:gravity="center"
+            android:paddingHorizontal="6dp"
+            android:text="一起看"
+            android:textColor="#ffffffff"
+            android:textSize="14sp" />
+
         <TextView
             android:id="@+id/tv_keyframe"
             android:layout_width="42dp"

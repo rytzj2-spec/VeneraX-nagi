@@ -33,6 +33,8 @@ object SuiteConfigPack {
     /** 导出选项（默认：只带配置，不带任何个人数据） */
     data class Options(
         var name: String = "",
+        /** 配置链接：填了的话对方导入后会自动从这里更新（把以后导出的新文件上传到同一个地址） */
+        var updateUrl: String = "",
         var comic: Boolean = true,
         var comicAccounts: Boolean = false,
         var comicFavorites: Boolean = false,
@@ -50,6 +52,9 @@ object SuiteConfigPack {
         val parts: List<String>,
         val enabled: Set<String>,
         val hasPersonal: Boolean,
+        /** 导出时间（毫秒）：自动更新时比大小 */
+        val revision: Long,
+        val updateUrl: String,
         val raw: JSONObject,
     )
 
@@ -141,6 +146,8 @@ object SuiteConfigPack {
             m.put("app", "Nagisaland")
             m.put("format", FORMAT)
             m.put("name", o.name)
+            m.put("revision", System.currentTimeMillis())
+            if (o.updateUrl.isNotBlank()) m.put("updateUrl", o.updateUrl.trim())
             m.put("createdAt", java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date()))
             m.put("fromVersion", try {
                 ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
@@ -187,12 +194,14 @@ object SuiteConfigPack {
             parts = parts,
             enabled = enabled,
             hasPersonal = parts.any { it in setOf("comicAccounts", "comicFavorites", "comicHistory", "videoAccounts") },
+            revision = j.optLong("revision", 0L),
+            updateUrl = j.optString("updateUrl"),
             raw = j,
         )
     }
 
-    /** 导入：写文件 + 分区开关。返回导入了什么（给人看的一句话） */
-    fun import(ctx: Context, uri: Uri): String {
+    /** 导入：写文件 + 分区开关 + 订阅配置链接。[sourceUrl] = 从哪个链接下载的（配置里没写 updateUrl 时就订阅它）。返回导入了什么 */
+    fun import(ctx: Context, uri: Uri, sourceUrl: String? = null): String {
         val manifest = readManifest(ctx, uri)
         val f = files(ctx)
         var sources = 0
@@ -263,6 +272,7 @@ object SuiteConfigPack {
         }
 
         SuiteProfile.applyImported(ctx, manifest.enabled, manifest.name)
+        SuiteConfigSync.afterImport(ctx, manifest.updateUrl.ifBlank { sourceUrl.orEmpty() }, manifest.revision)
 
         val done = mutableListOf<String>()
         if (sources > 0) done += "漫画源 $sources 个"

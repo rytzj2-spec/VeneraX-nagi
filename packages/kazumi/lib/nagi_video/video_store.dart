@@ -13,16 +13,40 @@ class VideoSettings {
   bool landscape; // 播放时横屏
   double speed;
 
-  VideoSettings({this.hardwareDecode = true, this.autoNext = true, this.landscape = true, this.speed = 1.0});
+  // 一起看（SyncPlay）：上次用的房间名、昵称、服务器
+  String syncRoom;
+  String syncName;
+  String syncServer;
+
+  VideoSettings({
+    this.hardwareDecode = true,
+    this.autoNext = true,
+    this.landscape = true,
+    this.speed = 1.0,
+    this.syncRoom = '',
+    this.syncName = '',
+    this.syncServer = 'syncplay.pl:8996',
+  });
 
   factory VideoSettings.fromJson(Map<String, dynamic> j) => VideoSettings(
         hardwareDecode: j['hardwareDecode'] ?? true,
         autoNext: j['autoNext'] ?? true,
         landscape: j['landscape'] ?? true,
         speed: (j['speed'] as num?)?.toDouble() ?? 1.0,
+        syncRoom: j['syncRoom'] ?? '',
+        syncName: j['syncName'] ?? '',
+        syncServer: j['syncServer'] ?? 'syncplay.pl:8996',
       );
 
-  Map<String, dynamic> toJson() => {'hardwareDecode': hardwareDecode, 'autoNext': autoNext, 'landscape': landscape, 'speed': speed};
+  Map<String, dynamic> toJson() => {
+        'hardwareDecode': hardwareDecode,
+        'autoNext': autoNext,
+        'landscape': landscape,
+        'speed': speed,
+        'syncRoom': syncRoom,
+        'syncName': syncName,
+        'syncServer': syncServer,
+      };
 }
 
 class VideoStore extends ChangeNotifier {

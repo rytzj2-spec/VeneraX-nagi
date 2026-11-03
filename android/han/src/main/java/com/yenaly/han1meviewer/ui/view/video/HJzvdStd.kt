@@ -302,6 +302,10 @@ class HJzvdStd @JvmOverloads constructor(
         tvKeyframe.setOnClickListener(this)
         tvKeyframe.setOnLongClickListener(this)
         btnGoHome.setOnClickListener(this)
+        // Nagisaland：一起看（SyncPlay 同步播放）
+        findViewById<View?>(R.id.tv_together)?.setOnClickListener {
+            com.yenaly.han1meviewer.suite.NagiTogetherH.showDialog(this)
+        }
 
         fullscreenButton.setOnClickListener {
             (context as? FragmentActivity)
@@ -328,6 +332,7 @@ class HJzvdStd @JvmOverloads constructor(
 
     override fun setUp(jzDataSource: JZDataSource?, screen: Int, clazz: Class<*>) {
         super.setUp(jzDataSource, screen, clazz)
+        com.yenaly.han1meviewer.suite.NagiTogetherH.bind(this)
         Log.d("CustomJzvdStd-Settings", buildString {
             append("showBottomProgress: ")
             appendLine(showBottomProgress)
@@ -730,8 +735,19 @@ class HJzvdStd @JvmOverloads constructor(
         UPDATE_PROGRESS_TIMER.schedule(mProgressTimerTask, 0, 100)
     }
 
+    override fun onStatePlaying() {
+        super.onStatePlaying()
+        com.yenaly.han1meviewer.suite.NagiTogetherH.onLocalPlayState(this)
+    }
+
+    override fun onStatePause() {
+        super.onStatePause()
+        com.yenaly.han1meviewer.suite.NagiTogetherH.onLocalPlayState(this)
+    }
+
     override fun onProgress(progress: Int, position: Long, duration: Long) {
         super.onProgress(progress, position, duration)
+        com.yenaly.han1meviewer.suite.NagiTogetherH.onProgress(this, position)
         if (screen == SCREEN_FULLSCREEN) hKeyframe?.let {
             var match = false
             for ((index, kf) in it.keyframes.withIndex()) {

@@ -193,6 +193,8 @@ class SuiteStartup : Initializer<Unit> {
     override fun create(context: Context) {
         // 一键配置：「是不是升级上来的老用户」要在任何分区写文件之前判断（只在第一次运行时判断一次）
         try { SuiteProfile.configured(context) } catch (e: Throwable) { Log.w("SuiteStartup", "profile", e) }
+        // 配置链接下载好的新配置：在任何分区启动之前套用（不用重启）
+        try { if (SuiteProfile.configured(context)) SuiteConfigSync.applyPending(context) } catch (e: Throwable) { Log.w("SuiteStartup", "config sync", e) }
         SuiteEngines.initLoaderSafe(context)
         // 上次进程是怎么退出的（原生崩溃 / ANR / 被系统杀）→ 内部存储/Nagisaland/crash/
         try { SuiteExitInfo.check(context) } catch (e: Throwable) { Log.w("SuiteStartup", "exit info", e) }

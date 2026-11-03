@@ -190,11 +190,12 @@ object SuitePanels {
         row.addView(View(a), LinearLayout.LayoutParams(a.dp(10f), 1))
         row.addView(button(a, "流畅度设置") { dialog.dismiss(); showSettings(a) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(row)
-        // 一键配置：导出给别人 / 导入别人给的（SuiteConfigUi）
-        root.addView(FrameLayout(a).apply {
-            setPadding(0, a.dp(10f), 0, 0)
-            addView(button(a, "一键配置（导出 / 导入）") { dialog.dismiss(); SuiteConfigUi.showMenu(a) })
-        })
+        // 一键配置（导出 / 导入，SuiteConfigUi）、一起看（屏幕共享 / 同步播放，SuiteTogetherUi）
+        val row2 = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, a.dp(10f), 0, 0) }
+        row2.addView(button(a, "一键配置") { dialog.dismiss(); SuiteConfigUi.showMenu(a) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row2.addView(View(a), LinearLayout.LayoutParams(a.dp(10f), 1))
+        row2.addView(button(a, "一起看") { dialog.dismiss(); SuiteTogetherUi.showMenu(a) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(row2)
         dialog = bottomDialog(a, root)
         dialog.show()
     }

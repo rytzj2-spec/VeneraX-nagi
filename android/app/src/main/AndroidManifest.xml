@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <!-- 屏幕共享：录「手机正在播放的声音」（AudioPlaybackCapture，Android 10+），不录麦克风 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
@@ -113,6 +115,16 @@
                 <data android:mimeType="application/x-zip-compressed" />
             </intent-filter>
         </activity>
+        <!-- 一起看：屏幕共享（手机自己当服务器，浏览器看） -->
+        <activity
+            android:name=".suite.SuiteShareActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <service
+            android:name=".suite.SuiteScreenShareService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
         <!-- 导入配置后重启 App：在单独的进程里杀掉主进程再打开 -->
         <activity
             android:name=".suite.SuiteRestartActivity"

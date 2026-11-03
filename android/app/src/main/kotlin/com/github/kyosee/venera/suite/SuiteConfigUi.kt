@@ -49,6 +49,82 @@ object SuiteConfigUi {
             dialog.dismiss()
             a.startActivity(Intent(a, SuiteOnboardActivity::class.java).putExtra(SuiteOnboardActivity.EXTRA_PICK, true))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(View(a), LinearLayout.LayoutParams(1, a.dp(10f)))
+        root.addView(SuitePanels.button(a, "从配置链接导入") {
+            dialog.dismiss()
+            askLink(a) { url ->
+                a.startActivity(Intent(a, SuiteOnboardActivity::class.java).putExtra(SuiteOnboardActivity.EXTRA_URL, url))
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        // 自动更新（订阅了配置链接时）
+        val sub = SuiteConfigSync.url(a)
+        if (sub != null) {
+            val checked = SuiteConfigSync.lastChecked(a)
+            root.addView(TextView(a).apply {
+                text = "自动更新：$sub" + if (checked > 0) "\n上次检查 " + SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date(checked)) else ""
+                setTextColor(SuitePanels.SUB); textSize = 12.5f
+                setPadding(0, a.dp(14f), 0, a.dp(6f))
+            })
+            val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL }
+            row.addView(SuitePanels.button(a, "立即检查更新") {
+                dialog.dismiss()
+                Toast.makeText(a, "正在检查…", Toast.LENGTH_SHORT).show()
+                SuiteConfigSync.checkInBackground(a, force = true) { msg ->
+                    if (SuiteConfigSync.hasPending(a)) confirmRestart(a, msg)
+                    else Toast.makeText(a, msg, Toast.LENGTH_LONG).show()
+                }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(View(a), LinearLayout.LayoutParams(a.dp(10f), 1))
+            row.addView(SuitePanels.button(a, "取消自动更新") {
+                dialog.dismiss()
+                SuiteConfigSync.unsubscribe(a)
+                Toast.makeText(a, "不再自动更新配置", Toast.LENGTH_SHORT).show()
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            root.addView(row)
+        }
+        dialog = SuitePanels.bottomDialog(a, root)
+        dialog.show()
+    }
+
+    /** 输入配置链接 */
+    fun askLink(a: Activity, onOk: (String) -> Unit) {
+        val root = SuitePanels.sheet(a)
+        root.addView(SuitePanels.title(a, "输入配置链接", "别人发给你的 .nagi 文件的网址（http / https）。导入后会自动从这个链接更新"))
+        val edit = EditText(a).apply {
+            hint = "https://…/xxx.nagi"
+            setTextColor(SuitePanels.TEXT); setHintTextColor(SuitePanels.SUB); textSize = 15f
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            isSingleLine = true
+        }
+        root.addView(edit)
+        lateinit var dialog: Dialog
+        val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, a.dp(14f), 0, 0) }
+        row.addView(SuitePanels.button(a, "取消") { dialog.dismiss() }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(View(a), LinearLayout.LayoutParams(a.dp(10f), 1))
+        row.addView(SuitePanels.button(a, "下一步", primary = true) {
+            val u = edit.text.toString().trim()
+            if (!u.startsWith("http://", true) && !u.startsWith("https://", true)) {
+                Toast.makeText(a, "链接要以 http:// 或 https:// 开头", Toast.LENGTH_SHORT).show(); return@button
+            }
+            dialog.dismiss()
+            onOk(u)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(row)
+        dialog = SuitePanels.bottomDialog(a, root)
+        dialog.show()
+    }
+
+    private fun confirmRestart(a: Activity, msg: String) {
+        val root = SuitePanels.sheet(a)
+        root.addView(SuitePanels.title(a, "配置有更新", "$msg。现在重启 App 马上生效，或者等下次打开。"))
+        lateinit var dialog: Dialog
+        val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, a.dp(10f), 0, 0) }
+        row.addView(SuitePanels.button(a, "下次再说") { dialog.dismiss() }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(View(a), LinearLayout.LayoutParams(a.dp(10f), 1))
+        row.addView(SuitePanels.button(a, "现在重启", primary = true) { dialog.dismiss(); restartApp(a) },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(row)
         dialog = SuitePanels.bottomDialog(a, root)
         dialog.show()
     }
@@ -71,6 +147,19 @@ object SuiteConfigUi {
             isSingleLine = true
         }
         root.addView(nameEdit)
+        val urlEdit = EditText(a).apply {
+            hint = "配置链接（可选）：https://…/xxx.nagi"
+            setText(SuiteConfigSync.url(a).takeIf { SuiteProfile.isOwner(a) } ?: "")
+            setTextColor(SuitePanels.TEXT); setHintTextColor(SuitePanels.SUB); textSize = 14f
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            isSingleLine = true
+        }
+        root.addView(urlEdit)
+        root.addView(TextView(a).apply {
+            text = "填了以后，对方导入时会记住这个链接，以后自动更新：你重新导出，把新文件上传到同一个地址（覆盖旧文件）就行。" +
+                "链接要一直能访问：GitHub / Gitee 仓库里文件的 raw 链接、自己的 NAS、网盘直链都可以。"
+            setTextColor(SuitePanels.SUB); textSize = 12f
+        })
 
         fun header(t: String, sub: String? = null) {
             root.addView(TextView(a).apply {
@@ -81,7 +170,7 @@ object SuiteConfigUi {
         }
 
         val warn = TextView(a).apply {
-            text = "⚠ 带上个人数据后，拿到这个文件的人能登录你的账号、看到你的收藏和历史。只发给信得过的人。"
+            text = "⚠ 带上个人数据后，拿到这个文件的人能登录你的账号、看到你的收藏和历史。只发给信得过的人；也不要放到公开的配置链接上。"
             setTextColor(0xFFF87171.toInt()); textSize = 12.5f; visibility = View.GONE
             setPadding(0, a.dp(6f), 0, 0)
         }
@@ -142,6 +231,10 @@ object SuiteConfigUi {
                 Toast.makeText(a, "至少打开一个分区", Toast.LENGTH_SHORT).show(); return@button
             }
             o.name = nameEdit.text.toString().trim()
+            o.updateUrl = urlEdit.text.toString().trim()
+            if (o.updateUrl.isNotEmpty() && !o.updateUrl.startsWith("http://", true) && !o.updateUrl.startsWith("https://", true)) {
+                Toast.makeText(a, "配置链接要以 http:// 或 https:// 开头", Toast.LENGTH_SHORT).show(); return@button
+            }
             dialog.dismiss()
             runExport(a, o)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -213,18 +306,18 @@ object SuiteConfigUi {
     )
 
     /** 读文件 → 给人看内容 → 确认后导入；[restart] = 导入后重启 App（App 已经在用的时候） */
-    fun confirmImport(a: Activity, uri: Uri, restart: Boolean, onCancel: () -> Unit) {
+    fun confirmImport(a: Activity, uri: Uri, restart: Boolean, sourceUrl: String? = null, onCancel: () -> Unit) {
         io.execute {
             val m = runCatching { SuiteConfigPack.readManifest(a, uri) }
             main.post {
                 m.onFailure {
                     Toast.makeText(a, "打不开配置：${it.message}", Toast.LENGTH_LONG).show(); onCancel()
-                }.onSuccess { showConfirm(a, uri, it, restart, onCancel) }
+                }.onSuccess { showConfirm(a, uri, it, restart, sourceUrl, onCancel) }
             }
         }
     }
 
-    private fun showConfirm(a: Activity, uri: Uri, m: SuiteConfigPack.Manifest, restart: Boolean, onCancel: () -> Unit) {
+    private fun showConfirm(a: Activity, uri: Uri, m: SuiteConfigPack.Manifest, restart: Boolean, sourceUrl: String?, onCancel: () -> Unit) {
         val root = SuitePanels.sheet(a)
         root.addView(SuitePanels.title(a, "导入「${m.name.ifBlank { "未命名配置" }}」", m.createdAt.takeIf { it.isNotBlank() }?.let { "导出于 $it" }))
         fun line(t: String, c: Int = SuitePanels.TEXT) = root.addView(TextView(a).apply {
@@ -234,6 +327,8 @@ object SuiteConfigUi {
         line("包含：" + (parts.ifEmpty { listOf("只有分区设置") }).joinToString("、"))
         line("能用的分区：" + SuiteNavConfig.ALL.filter { it in m.enabled }.joinToString("、") { SuiteNavItems.label(it) })
         if (m.hasPersonal) line("这份配置带着别人的账号或个人数据。", 0xFFFBBF24.toInt())
+        val link = m.updateUrl.ifBlank { sourceUrl.orEmpty() }
+        if (link.isNotBlank()) line("以后会自动从这个链接更新：$link", SuitePanels.SUB)
         if (SuiteProfile.configured(a)) {
             line("导入后这台手机只显示上面这些分区；同名的漫画源、番剧规则会被替换，已有的登录会保留。" +
                 if (restart) "导入完 App 会自动重启。" else "", SuitePanels.SUB)
@@ -246,7 +341,7 @@ object SuiteConfigUi {
         row.addView(SuitePanels.button(a, "导入", primary = true) {
             started = true
             dialog.dismiss()
-            runImport(a, uri, restart, onCancel)
+            runImport(a, uri, restart, sourceUrl, onCancel)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(row)
         dialog = SuitePanels.bottomDialog(a, root)
@@ -254,10 +349,10 @@ object SuiteConfigUi {
         dialog.show()
     }
 
-    private fun runImport(a: Activity, uri: Uri, restart: Boolean, onCancel: () -> Unit) {
+    private fun runImport(a: Activity, uri: Uri, restart: Boolean, sourceUrl: String?, onCancel: () -> Unit) {
         val toast = Toast.makeText(a, "正在导入…", Toast.LENGTH_SHORT).also { it.show() }
         io.execute {
-            val r = runCatching { SuiteConfigPack.import(a, uri) }
+            val r = runCatching { SuiteConfigPack.import(a, uri, sourceUrl) }
             main.post {
                 toast.cancel()
                 r.onFailure {
@@ -299,6 +394,7 @@ object SuiteConfigUi {
 class SuiteOnboardActivity : Activity() {
     companion object {
         const val EXTRA_PICK = "pick"
+        const val EXTRA_URL = "url"
         private const val REQ_PICK = 0x4e41
     }
 
@@ -312,6 +408,7 @@ class SuiteOnboardActivity : Activity() {
         when {
             data != null && savedInstanceState == null -> importUri(data)
             intent?.getBooleanExtra(EXTRA_PICK, false) == true && savedInstanceState == null -> pick()
+            intent?.getStringExtra(EXTRA_URL) != null && savedInstanceState == null -> importLink(intent.getStringExtra(EXTRA_URL)!!)
         }
     }
 
@@ -332,6 +429,9 @@ class SuiteOnboardActivity : Activity() {
             setLineSpacing(0f, 1.25f)
         })
         col.addView(SuitePanels.button(this, "选择配置文件", primary = true) { pick() },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (50 * dp).toInt()))
+        col.addView(View(this), LinearLayout.LayoutParams(1, (12 * dp).toInt()))
+        col.addView(SuitePanels.button(this, "输入配置链接") { SuiteConfigUi.askLink(this) { importLink(it) } },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (50 * dp).toInt()))
         col.addView(TextView(this).apply {
             text = "在微信 / QQ 里收到文件后，也可以直接点开文件，选「用 Nagisaland 打开」。"
@@ -365,9 +465,25 @@ class SuiteOnboardActivity : Activity() {
         importUri(uri)
     }
 
+    /** 从配置链接导入：先下载到缓存，再走和文件一样的确认 */
+    private fun importLink(url: String) {
+        Toast.makeText(this, "正在下载配置…", Toast.LENGTH_SHORT).show()
+        val target = File(cacheDir, "link_import.nagi")
+        Thread {
+            val r = runCatching { SuiteConfigSync.download(url, target) }
+            runOnUiThread {
+                r.onSuccess { SuiteConfigUi.confirmImport(this, Uri.fromFile(target), restart = configured, sourceUrl = url) { done() } }
+                    .onFailure {
+                        Toast.makeText(this, "下载配置失败：${it.message}", Toast.LENGTH_LONG).show()
+                        done()
+                    }
+            }
+        }.start()
+    }
+
     private fun importUri(uri: Uri) {
         // 已经在用的 App 导入 = 各分区可能已经读过旧配置，导入完重启
-        SuiteConfigUi.confirmImport(this, uri, restart = configured) { done() }
+        SuiteConfigUi.confirmImport(this, uri, restart = configured, sourceUrl = null) { done() }
     }
 
     /** 取消：还没导入过就留在欢迎页，导入过的直接关掉这个页面 */

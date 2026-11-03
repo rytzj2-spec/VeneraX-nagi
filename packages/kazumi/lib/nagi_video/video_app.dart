@@ -10,6 +10,7 @@ import '../nagi_theme.dart';
 import 'browse_pages.dart';
 import 'emby_api.dart';
 import 'video_store.dart';
+import 'video_together.dart';
 import 'widgets.dart';
 
 Future<void> nagiVideoMain() async {
@@ -35,6 +36,7 @@ class NagiVideoApp extends StatelessWidget {
     final theme = NagiTheme.apply(ThemeData(useMaterial3: true, brightness: Brightness.dark));
     return MaterialApp(
       navigatorKey: _videoNavigatorKey,
+      scaffoldMessengerKey: videoMessengerKey,
       title: '影视',
       debugShowCheckedModeBanner: false,
       theme: theme,

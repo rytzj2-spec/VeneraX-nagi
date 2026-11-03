@@ -219,6 +219,28 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
 - 「流畅度设置 → 手势」：左边缘右滑打开设置（默认开）、底栏左滑打开设置（v0.19.4 的做法，默认关）、分区首页返回时（三选一）。
   主界面网页的「更多」打开的也是这个原生面板。
 
+## 2026-11-04 v0.21.0（versionCode 57）：配置链接、一起看、屏幕共享
+- 配置链接（`suite/SuiteConfigSync.kt`）：导出时可填 updateUrl（写进 manifest，另带 `revision` = 导出时间）；导入后订阅
+  （配置里没写就订阅下载它的那个链接）。主界面 onCreate 时 6 小时最多查一次（ETag / Last-Modified，再比 revision），
+  新的下载到 `filesDir/config_pending.nagi`，下次进程启动时 `SuiteStartup` → `applyPending` 在任何分区启动前套用（不用重启）。
+  「一键配置」菜单：从配置链接导入、立即检查更新（有更新可选马上重启）、取消自动更新；导入页加「输入配置链接」。
+  链接要放在一直在线的地方（GitHub / Gitee raw、NAS、网盘直链），手机当服务器不行。
+- 「更多 → 一起看」（`suite/SuiteTogetherUi.kt`）：
+  - 屏幕共享（`suite/SuiteScreenShare.kt`，手机自己当服务器）：MediaProjection → VirtualDisplay（最长边 1280）→ ImageReader →
+    JPEG（约 12 帧/秒，没人看不编码）→ MJPEG；声音 Android 10+ 用 AudioPlaybackCapture（录手机正在播放的声音，不录麦克风，
+    需要 RECORD_AUDIO）→ 48k 立体声 PCM。小 HTTP 服务（端口 8686，被占就随机）：`/<6 位口令>/` 网页、`v.mjpg`、`a.pcm`、`info`；
+    网页用 <img> 显示 MJPEG，声音 fetch 读 PCM、Web Audio 排队播放（延迟 0.1~0.6 秒）。前台服务类型 mediaProjection，通知里能停。
+    地址列 Wi-Fi / 热点、Tailscale（100.64/10）、公网 IPv6。不在同一个网络要组网工具。横竖屏切换时重建画面大小。
+  - 看别人的屏幕：粘贴链接 → 浏览器打开。
+- 同步播放（SyncPlay，公共服务器 syncplay.pl:8996，画面各自播）：
+  - 影视：`nagi_video/video_together.dart`，复用番剧的 `SyncplayClient`；播放页顶栏「一起看」；房间一直保持（换集 / 退出播放页不断开）；
+    file 名 `nagivideo|<服务器地址>|<条目 id>|<标题>`，对方换了视频、自己也登录着同一个服务器时自动跟着换。
+    本地暂停 / 播放从 `player.stream.playing`、拖进度从 position 跳变（>2.5 秒）判断；对方的状态套用后 1.5 秒内不回发。
+    设置存在 `nagi_video.json` 的 settings（syncRoom / syncName / syncServer）。提示用 `videoMessengerKey`。
+  - H：Kotlin 版客户端 `han/.../suite/NagiSyncPlay.kt`（协议照 Kazumi：STARTTLS、Hello、joined + ready、State 心跳 + RTT、
+    ignoringOnTheFly），`NagiTogetherH.kt` 接 Jzvd（onStatePlaying / onStatePause / onProgress 跳变）；
+    播放器顶栏 `tv_together`「一起看」；file 名 `nagih|<videoCode>|<标题>`，对方换视频自动打开同一个 VideoActivity。
+
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后
 `flutter build apk --release --target-platform android-arm64 --dart-define-from-file=dart_defines.txt`（没有 dart_defines.txt 就去掉这个参数）。

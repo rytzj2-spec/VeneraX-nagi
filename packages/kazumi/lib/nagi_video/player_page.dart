@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../nagi_theme.dart';
 import 'emby_api.dart';
 import 'video_store.dart';
+import 'video_together.dart';
 
 class VideoPlayerPage extends StatefulWidget {
   final MediaItem item;
@@ -98,6 +99,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         final s = src.subtitles.first;
         await player.setSubtitleTrack(SubtitleTrack.uri(s.url, title: s.title, language: s.language));
       }
+      // 一起看：告诉房间在看这一集；对方换了视频时跟着换
+      VideoTogether.instance.bind(player, item, _switchTo);
       await api.reportStart(item.id, src, player.state.position);
       _reportTimer?.cancel();
       _reportTimer = Timer.periodic(const Duration(seconds: 10), (_) => _report());
@@ -136,6 +139,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
   }
 
+  /// 一起看：对方换了视频，跟着换
+  Future<void> _switchTo(MediaItem m) async {
+    if (!mounted) return;
+    await _stopReport();
+    item = m;
+    await _start(fromStart: true);
+  }
+
   Future<void> _playNext() async {
     final next = _next;
     if (next == null) return;
@@ -146,6 +157,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   void dispose() {
+    VideoTogether.instance.unbind(player);
     _stopReport();
     for (final s in _subs) {
       s.cancel();
@@ -232,6 +244,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       MaterialCustomButton(onPressed: () => _pickTrack(audio: false), icon: const Icon(Icons.subtitles_outlined)),
       MaterialCustomButton(onPressed: () => _pickTrack(audio: true), icon: const Icon(Icons.audiotrack_outlined)),
       MaterialCustomButton(onPressed: _pickSpeed, icon: const Icon(Icons.speed)),
+      MaterialCustomButton(
+        onPressed: () => showVideoTogetherSheet(context).then((_) {
+          if (mounted && VideoTogether.instance.active) VideoTogether.instance.bind(player, item, _switchTo);
+          if (mounted) setState(() {});
+        }),
+        icon: Icon(VideoTogether.instance.active ? Icons.group : Icons.group_outlined),
+      ),
       if (_next != null) MaterialCustomButton(onPressed: _playNext, icon: const Icon(Icons.skip_next)),
     ];
     final theme = MaterialVideoControlsThemeData(
