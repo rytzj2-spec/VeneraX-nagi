@@ -91,6 +91,10 @@ object SuiteNav {
     @JvmStatic
     fun go(from: Activity, to: String) {
         if (!enabled()) return
+        if (!SuiteProfile.isEnabled(from, to)) {          // 一键配置里关掉的分区
+            android.widget.Toast.makeText(from, "这个分区没有开启", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         val cls: Class<*> = when (to) {
             "comic" -> MainActivity::class.java
             "anime" -> KazumiActivity::class.java
@@ -119,7 +123,9 @@ object SuiteNav {
         if (!enabled() || a.isChangingConfigurations) return false
         val nagi = nagiRef?.get()
         if (nagi != null && (nagi.isFinishing || nagi.isDestroyed)) return false
-        go(a, "lib")
+        // gal（游戏库 / 小站 / 解压 / 模拟器）全关了：没有主界面可回，直接退到后台
+        val home = SuiteProfile.firstGal(a) ?: run { a.moveTaskToBack(true); return true }
+        go(a, home)
         return true
     }
 
@@ -129,10 +135,29 @@ object SuiteNav {
         if (callbacksRegistered) return
         callbacksRegistered = true
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
-            override fun onActivityCreated(a: Activity, b: Bundle?) { remember(a) }
+            override fun onActivityCreated(a: Activity, b: Bundle?) {
+                // 一键配置：全新安装还没导入配置 → 任何界面都先去导入页
+                if (a !is SuiteOnboardActivity && a !is SuiteRestartActivity && !SuiteProfile.configured(a)) {
+                    try {
+                        a.startActivity(Intent(a, SuiteOnboardActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (_: Throwable) {}
+                    a.finish()
+                    return
+                }
+                remember(a)
+            }
             override fun onActivityStarted(a: Activity) { remember(a) }
             override fun onActivityResumed(a: Activity) {
                 remember(a)
+                if (a.javaClass.name == NAGI_MAIN) {
+                    // gal 全关了：主界面没东西，直接进第一个能用的分区
+                    if (SuiteProfile.firstGal(a) == null) {
+                        SuiteProfile.firstSection(a)?.let { go(a, it) }
+                        return
+                    }
+                    // 要去的页面被关了 → 换成第一个能用的
+                    pendingTab?.let { if (!SuiteProfile.isEnabled(a, it)) pendingTab = SuiteProfile.firstGal(a) }
+                }
                 if (a.javaClass.name == NAGI_MAIN) applyPendingTab(a)
                 SuitePerf.onResumed(a, keyOf(a))
             }

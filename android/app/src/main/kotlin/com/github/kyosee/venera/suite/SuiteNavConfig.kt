@@ -29,15 +29,31 @@ object SuiteNavConfig {
 
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /** 一键配置里打开了的分区（SuiteProfile；没导入过配置的自己用 = 全部） */
+    fun available(ctx: Context): List<String> = ALL.filter { SuiteProfile.isEnabled(ctx, it) }
+
+    /** 底栏最少几个：一般 3 个；能用的分区不到 3 个时就是全部 */
+    fun minBar(ctx: Context): Int = minOf(MIN_BAR, available(ctx).size)
+
     fun order(ctx: Context): List<String> {
-        val saved = prefs(ctx).getString("order", null)?.split(',')?.filter { it in ALL }?.distinct().orEmpty()
-        return saved + ALL.filter { it !in saved }
+        val avail = available(ctx)
+        val saved = prefs(ctx).getString("order", null)?.split(',')?.filter { it in avail }?.distinct().orEmpty()
+        return saved + avail.filter { it !in saved }
     }
 
     fun inBar(ctx: Context): Set<String> {
-        val raw = prefs(ctx).getString("bar", null) ?: return DEFAULT_BAR
-        val s = raw.split(',').filter { it in ALL }.toSet()
-        return if (s.size in MIN_BAR..MAX_BAR) s else DEFAULT_BAR
+        val avail = available(ctx).toSet()
+        val min = minBar(ctx)
+        val raw = prefs(ctx).getString("bar", null)
+        val s = raw?.split(',')?.filter { it in avail }?.toSet()
+        if (s != null && s.size in min..MAX_BAR) return s
+        // 默认：原来的 5 个里能用的；不够就按顺序补
+        val d = DEFAULT_BAR.filter { it in avail }.toMutableSet()
+        for (k in order(ctx)) {
+            if (d.size >= minOf(5, avail.size)) break
+            d.add(k)
+        }
+        return d
     }
 
     /** 底栏上的分区（按顺序，不含「更多」） */
@@ -48,7 +64,8 @@ object SuiteNavConfig {
 
     /** 保存；返回错误信息（null = 成功） */
     fun save(ctx: Context, order: List<String>, bar: Set<String>): String? {
-        if (bar.size < MIN_BAR) return "底栏至少放 $MIN_BAR 个"
+        val min = minBar(ctx)
+        if (bar.size < min) return "底栏至少放 $min 个"
         if (bar.size > MAX_BAR) return "底栏最多放 $MAX_BAR 个"
         prefs(ctx).edit()
             .putString("order", order.filter { it in ALL }.distinct().joinToString(","))
@@ -75,6 +92,7 @@ object SuiteNavConfig {
         o.put("bar", JSONArray(bar(ctx)))
         o.put("more", JSONArray(more(ctx)))
         o.put("order", JSONArray(order(ctx)))
+        o.put("enabled", JSONArray(available(ctx)))
         o.put("labels", JSONObject(LABELS as Map<*, *>))
         return o.toString()
     }
@@ -82,6 +100,9 @@ object SuiteNavConfig {
     fun addListener(l: () -> Unit) {
         synchronized(listeners) { listeners.add(WeakReference(l)) }
     }
+
+    /** 一键配置导入后：分区开关变了，各处底栏刷新 */
+    fun notifyProfileChanged() = notifyChanged()
 
     private fun notifyChanged() {
         main.post {

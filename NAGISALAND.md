@@ -186,6 +186,25 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
   - Dart 端 `packages/kazumi/lib/nagi_suite_channel.dart`：漫画推 `SettingsPage` 到根导航，番剧 `pushNamed('/settings/')`，影视回首页切「设置」分页。
   - 主界面网页底栏左滑：游戏库 → 游戏目录设置；小站 / 解压 / 模拟器 → 流畅度设置（`Bridge.suiteSettings`）。
 
+## 2026-11-04 v0.20.0（versionCode 55）：一键配置
+- 「更多 → 一键配置」：导出 / 导入 `.nagi`（zip）。原生实现（`suite/SuiteConfigPack.kt` 打包解包、`SuiteConfigUi.kt` 界面、`SuiteProfile.kt` 分区开关），
+  各分区的数据都在 App 私有目录 filesDir（= Flutter 的 getApplicationSupportDirectory），直接读写文件：
+  - 漫画：`comic_source/*.js` + `.data`（不带账号时只留 `settings`，账号 / token / cookies / `_device…` 都去掉）、`appdata.json` 的 settings
+    （去掉应用锁密码、WebDAV、图片翻译 API Key、deviceId、代理、本机路径等，见 `COMIC_SETTING_SKIP`）；
+    可选 `cookie.db`（登录）、`local_favorite.db` + `read_later.db`（收藏）、`history.db`（历史）。
+    导入写 appdata.json 时必须带 `searchHistory`（缺了漫画会把整个文件当坏的删掉）。
+  - 番剧：`plugins/v2/plugins.json`（规则，按 name 合并）。番剧自己的设置在 Hive 里，这一版没导出。
+  - 影视：`nagi_video.json`（不带账号时清空 username / userId / token / deviceId；导入时同地址已登录的保留本机登录）。
+    影视界面：没登录的服务器显示「未登录，点一下登录」，点了直接进登录页；聚合视界 / 搜索跳过没登录的。
+  - 个人数据默认都不带，勾选时红字提醒。
+  - 分区开关：导出时选对方能用哪些分区（gal = 游戏库 / 小站 / 解压 / 模拟器，一个总开关 + 4 个小开关；漫画 / 番剧 / 影视 / H）。
+    `SuiteProfile.enabled` → `SuiteNavConfig.available/order/inBar` 过滤（底栏最少个数 = min(3, 能用的个数)），主界面网页 `navConfig().enabled` 藏按钮、
+    默认页换成第一个能用的；`SuiteNav.go` 拒绝关掉的分区；gal 全关时主界面一打开就进第一个分区，分区根页面返回 = 退到后台；预热跳过关掉的。
+- 必须先导入：全新安装（`SuiteStartup` 一开始判断 filesDir 里没有任何分区数据）→ 任何界面都先转到 `SuiteOnboardActivity`；
+  升级上来的老用户当作自己用（`owner`），全部分区可用。导入页也接「用 Nagisaland 打开」（VIEW，octet-stream / zip）。
+- App 已经在用时导入：写完文件后 `SuiteRestartActivity`（单独进程 `:nagi_restart`）杀掉主进程再打开。
+- 导出文件在 `内部存储/Nagisaland/config/<配置名>-<时间>.nagi`，可直接「分享」（FileProvider）。
+
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后
 `flutter build apk --release --target-platform android-arm64 --dart-define-from-file=dart_defines.txt`（没有 dart_defines.txt 就去掉这个参数）。

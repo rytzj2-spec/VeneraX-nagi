@@ -95,6 +95,31 @@
             android:excludeFromRecents="true"
             android:noHistory="true"
             android:theme="@android:style/Theme.NoDisplay" />
+        <!-- Nagisaland 一键配置：全新安装先在这里导入 .nagi；也接微信 / QQ / 文件管理「用 Nagisaland 打开」 -->
+        <activity
+            android:name=".suite.SuiteOnboardActivity"
+            android:exported="true"
+            android:label="导入 Nagisaland 配置"
+            android:theme="@style/NagisaTheme"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+            </intent-filter>
+        </activity>
+        <!-- 导入配置后重启 App：在单独的进程里杀掉主进程再打开 -->
+        <activity
+            android:name=".suite.SuiteRestartActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:process=":nagi_restart"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity
             android:name=".kazumi.KazumiActivity"
             android:label="番剧"

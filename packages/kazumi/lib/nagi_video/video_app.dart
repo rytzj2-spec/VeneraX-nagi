@@ -133,8 +133,16 @@ class ServersTab extends StatelessWidget {
                         child: Text(kindLabel(s.kind)[0], style: const TextStyle(color: NagiColors.text)),
                       ),
                       title: Text(s.name),
-                      subtitle: Text('${kindLabel(s.kind)} · ${s.username} · ${s.url}', maxLines: 1, overflow: TextOverflow.ellipsis),
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ServerHomePage(s))),
+                      // Nagisaland：一键配置导入的服务器默认不带账号（token 为空）→ 点一下先登录
+                      subtitle: Text(
+                          s.token.isEmpty
+                              ? '${kindLabel(s.kind)} · 未登录，点一下登录 · ${s.url}'
+                              : '${kindLabel(s.kind)} · ${s.username} · ${s.url}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      onTap: () => s.token.isEmpty
+                          ? showServerEditor(context, existing: s)
+                          : Navigator.of(context).push(MaterialPageRoute(builder: (_) => ServerHomePage(s))),
                       trailing: PopupMenuButton<String>(
                         onSelected: (v) async {
                           if (v == 'edit') {
@@ -479,7 +487,7 @@ class _AggregateTabState extends State<AggregateTab> with AutomaticKeepAliveClie
       loading = true;
       errors.clear();
     });
-    final servers = List.of(VideoStore.instance.servers);
+    final servers = VideoStore.instance.servers.where((s) => s.token.isNotEmpty).toList(); // 没登录的跳过
     final r = <MediaItem>[], n = <MediaItem>[], l = <MediaItem>[];
     await Future.wait(servers.map((s) async {
       final api = EmbyApi(s);

@@ -168,9 +168,9 @@ object SuiteEngines {
             prewarmed = true
             val app = ctx.applicationContext
             val h = Handler(Looper.getMainLooper())
-            val steps = listOf<Pair<String, () -> Unit>>(
-                "番剧" to { io.github.kyosee.venera.kazumi.KazumiEngine.get(app) },
-                "影视" to { io.github.kyosee.venera.video.VideoActivity.engine(app) },
+            val steps = listOfNotNull<Pair<String, () -> Unit>>(
+                if (SuiteProfile.isEnabled(app, "anime")) "番剧" to { io.github.kyosee.venera.kazumi.KazumiEngine.get(app) } else null,
+                if (SuiteProfile.isEnabled(app, "video")) "影视" to { io.github.kyosee.venera.video.VideoActivity.engine(app) } else null,
             )
             fun run(i: Int) {
                 if (i >= steps.size) return
@@ -191,6 +191,8 @@ object SuiteEngines {
 /** 进程一启动就初始化 Flutter（Impeller 开关）并开始跟踪各分区界面（androidx.startup） */
 class SuiteStartup : Initializer<Unit> {
     override fun create(context: Context) {
+        // 一键配置：「是不是升级上来的老用户」要在任何分区写文件之前判断（只在第一次运行时判断一次）
+        try { SuiteProfile.configured(context) } catch (e: Throwable) { Log.w("SuiteStartup", "profile", e) }
         SuiteEngines.initLoaderSafe(context)
         // 上次进程是怎么退出的（原生崩溃 / ANR / 被系统杀）→ 内部存储/Nagisaland/crash/
         try { SuiteExitInfo.check(context) } catch (e: Throwable) { Log.w("SuiteStartup", "exit info", e) }

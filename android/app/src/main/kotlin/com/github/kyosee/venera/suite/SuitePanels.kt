@@ -31,13 +31,13 @@ import androidx.recyclerview.widget.RecyclerView
 
 /** 「更多」面板、编辑底栏、分区设置（原生，主界面网页和各分区共用） */
 object SuitePanels {
-    private const val BG = 0xFF16161B.toInt()
-    private const val CARD = 0xFF1C1C22.toInt()
-    private const val TEXT = 0xFFFAFAF9.toInt()
-    private const val SUB = 0xFFA1A1AA.toInt()
-    private const val PINK = 0xFFE879A9.toInt()
+    internal const val BG = 0xFF16161B.toInt()
+    internal const val CARD = 0xFF1C1C22.toInt()
+    internal const val TEXT = 0xFFFAFAF9.toInt()
+    internal const val SUB = 0xFFA1A1AA.toInt()
+    internal const val PINK = 0xFFE879A9.toInt()
 
-    private fun Context.dp(v: Float) = (v * resources.displayMetrics.density).toInt()
+    internal fun Context.dp(v: Float) = (v * resources.displayMetrics.density).toInt()
 
     /**
      * 开关：自己画滑块和轨道，不跟界面主题走。主界面是 Theme.Black（很老的系统主题），系统 Switch 在那里只剩一个淡淡的小点；
@@ -45,7 +45,7 @@ object SuitePanels {
      * 开 = 紫色滑块 + 暗紫轨道，关 = 浅灰滑块 + 深灰轨道。
      */
     @Suppress("DEPRECATION")
-    private fun nagiSwitch(a: Context): Switch {
+    internal fun nagiSwitch(a: Context): Switch {
         val box = a.dp(24f)                       // 滑块占的格子（开关总宽 = 2 格）
         val checked = intArrayOf(android.R.attr.state_checked)
         fun track(color: Int) = Pill(color, box * 2, box, a.dp(14f), a.dp(6f))
@@ -101,7 +101,7 @@ object SuitePanels {
         override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
     }
 
-    private fun bottomDialog(a: Activity, content: View): Dialog {
+    internal fun bottomDialog(a: Activity, content: View): Dialog {
         val d = Dialog(a)
         d.requestWindowFeature(Window.FEATURE_NO_TITLE)
         d.setContentView(content)
@@ -114,7 +114,7 @@ object SuitePanels {
         return d
     }
 
-    private fun sheet(a: Activity): LinearLayout = LinearLayout(a).apply {
+    internal fun sheet(a: Activity): LinearLayout = LinearLayout(a).apply {
         orientation = LinearLayout.VERTICAL
         background = GradientDrawable().apply {
             setColor(BG)
@@ -124,14 +124,14 @@ object SuitePanels {
         setPadding(a.dp(16f), a.dp(14f), a.dp(16f), a.dp(20f))
     }
 
-    private fun title(a: Activity, t: String, sub: String? = null) = LinearLayout(a).apply {
+    internal fun title(a: Activity, t: String, sub: String? = null) = LinearLayout(a).apply {
         orientation = LinearLayout.VERTICAL
         addView(TextView(a).apply { text = t; setTextColor(TEXT); textSize = 17f; paint.isFakeBoldText = true })
         if (sub != null) addView(TextView(a).apply { text = sub; setTextColor(SUB); textSize = 12.5f; setPadding(0, a.dp(2f), 0, 0) })
         setPadding(0, 0, 0, a.dp(10f))
     }
 
-    private fun button(a: Activity, t: String, primary: Boolean = false, onClick: () -> Unit) = Button(a).apply {
+    internal fun button(a: Activity, t: String, primary: Boolean = false, onClick: () -> Unit) = Button(a).apply {
         text = t
         isAllCaps = false
         setTextColor(if (primary) 0xFF18181B.toInt() else TEXT)
@@ -190,6 +190,11 @@ object SuitePanels {
         row.addView(View(a), LinearLayout.LayoutParams(a.dp(10f), 1))
         row.addView(button(a, "流畅度设置") { dialog.dismiss(); showSettings(a) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(row)
+        // 一键配置：导出给别人 / 导入别人给的（SuiteConfigUi）
+        root.addView(FrameLayout(a).apply {
+            setPadding(0, a.dp(10f), 0, 0)
+            addView(button(a, "一键配置（导出 / 导入）") { dialog.dismiss(); SuiteConfigUi.showMenu(a) })
+        })
         dialog = bottomDialog(a, root)
         dialog.show()
     }
@@ -207,8 +212,8 @@ object SuitePanels {
         val header = TextView(a).apply { setTextColor(SUB); textSize = 12.5f }
         fun refreshHeader() {
             val n = rows.count { it.inBar }
-            header.text = "底栏现在 $n 个（${SuiteNavConfig.MIN_BAR}~${SuiteNavConfig.MAX_BAR} 个），「更多」固定在最后。按住左边 ≡ 拖动排序。"
-            header.setTextColor(if (n in SuiteNavConfig.MIN_BAR..SuiteNavConfig.MAX_BAR) SUB else 0xFFF87171.toInt())
+            header.text = "底栏现在 $n 个（${SuiteNavConfig.minBar(a)}~${SuiteNavConfig.MAX_BAR} 个），「更多」固定在最后。按住左边 ≡ 拖动排序。"
+            header.setTextColor(if (n in SuiteNavConfig.minBar(a)..SuiteNavConfig.MAX_BAR) SUB else 0xFFF87171.toInt())
         }
         root.addView(title(a, "编辑底栏"))
         root.addView(header)
@@ -253,8 +258,8 @@ object SuitePanels {
                         sw.isChecked = false
                         return@setOnCheckedChangeListener
                     }
-                    if (!on && n <= SuiteNavConfig.MIN_BAR) {
-                        Toast.makeText(a, "底栏至少 ${SuiteNavConfig.MIN_BAR} 个", Toast.LENGTH_SHORT).show()
+                    if (!on && n <= SuiteNavConfig.minBar(a)) {
+                        Toast.makeText(a, "底栏至少 ${SuiteNavConfig.minBar(a)} 个", Toast.LENGTH_SHORT).show()
                         sw.isChecked = true
                         return@setOnCheckedChangeListener
                     }

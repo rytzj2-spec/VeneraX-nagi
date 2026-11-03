@@ -54,6 +54,14 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 一键配置：还没导入配置时 SuiteNav 已经把这个界面关掉、转去导入页了，不用再建 WebView
+        if (isFinishing || !io.github.kyosee.venera.suite.SuiteProfile.configured(this)) {
+            if (!isFinishing) {
+                startActivity(Intent(this, io.github.kyosee.venera.suite.SuiteOnboardActivity::class.java))
+                finish()
+            }
+            return
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_FULLSCREEN)
         val wv = WebView(this)
         webView = wv
