@@ -189,6 +189,7 @@ class OcrService : Service() {
             val data = intent.getParcelableExtra<Intent>("data")!!
             val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             val proj = mpm.getMediaProjection(code, data)
+                ?: throw IllegalStateException("getMediaProjection 返回 null（屏幕录制授权失败）")
             projection = proj
             val t = HandlerThread("nl-ocr")
             t.start()
