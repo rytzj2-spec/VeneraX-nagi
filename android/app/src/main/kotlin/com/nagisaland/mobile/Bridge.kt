@@ -244,6 +244,12 @@ class Bridge(private val activity: MainActivity) {
         }
     }
 
+    /** 「流畅度设置」面板（左滑主界面底栏时，游戏库以外的页面打开它） */
+    @JavascriptInterface
+    fun suiteSettings() {
+        activity.runOnUiThread { io.github.kyosee.venera.suite.SuitePanels.showSettings(activity) }
+    }
+
     @JavascriptInterface
     fun editNav() {
         activity.runOnUiThread { io.github.kyosee.venera.suite.SuitePanels.showEditor(activity) }

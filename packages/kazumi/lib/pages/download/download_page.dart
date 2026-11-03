@@ -132,6 +132,8 @@ class _DownloadPageState extends State<DownloadPage> {
       case DownloadStatus.completed:
         return '已完成 · ${formatBytes(episode.totalBytes)}';
       case DownloadStatus.downloading:
+        // Nagisaland：等自动重试时显示原因和倒计时
+        if (episode.errorMessage.isNotEmpty) return episode.errorMessage;
         final speed = downloadController.getSpeed(
           record.bangumiId,
           record.pluginName,

@@ -36,6 +36,11 @@ class VideoActivity : FlutterActivity() {
 
     override fun provideFlutterEngine(context: Context): FlutterEngine = engine(context)
 
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        SuiteNav.registerEngine("video", flutterEngine)   // 左滑分区栏打开设置用
+    }
+
     // 引擎常驻（切到别的分区再回来，播放 / 浏览状态都在）
     override fun shouldDestroyEngineWithHost(): Boolean = false
 

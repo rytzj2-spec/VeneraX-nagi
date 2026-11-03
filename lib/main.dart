@@ -1,4 +1,7 @@
 import 'package:kazumi/nagi_theme.dart';
+import 'package:kazumi/nagi_suite_channel.dart';
+import 'package:venera/foundation/context.dart';
+import 'package:venera/pages/settings/settings_page.dart';
 import 'package:kazumi/main.dart' as kazumi_app;
 import 'package:kazumi/nagi_video/video_app.dart' as nagi_video;
 import 'dart:async';
@@ -33,6 +36,12 @@ void main(List<String> args) {
   overrideIO(() {
     runZonedGuarded(() async {
       WidgetsFlutterBinding.ensureInitialized();
+      // Nagisaland：左滑分区栏 = 打开漫画设置（推到最上层，阅读器开着时也能看到）
+      installNagiSuiteChannel(openSettings: () {
+        final ctx = App.rootNavigatorKey.currentContext;
+        if (ctx == null) throw StateError('漫画界面还没准备好');
+        ctx.to(() => const SettingsPage());
+      });
       await init();
       runApp(const MyApp());
       if (App.isDesktop) {

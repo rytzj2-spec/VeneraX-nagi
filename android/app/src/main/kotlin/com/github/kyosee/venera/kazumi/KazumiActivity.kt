@@ -122,6 +122,7 @@ class KazumiActivity: AudioServiceActivity() {
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        io.github.kyosee.venera.suite.SuiteNav.registerEngine("anime", flutterEngine)
         downloadDirectoryHandler = DownloadDirectoryHandler(this)
         downloadDirectoryChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger, DownloadDirectoryHandler.CHANNEL

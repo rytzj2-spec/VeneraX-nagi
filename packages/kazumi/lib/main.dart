@@ -23,9 +23,18 @@ import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/services/platform/webview_feature_service.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/navigation.dart';
+import 'package:kazumi/nagi_suite_channel.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Nagisaland：左滑分区栏 = 打开番剧设置
+  installNagiSuiteChannel(openSettings: () {
+    final navigator = rootNavigatorKey.currentState;
+    if (navigator == null || !navigator.mounted) {
+      throw StateError('番剧界面还没准备好');
+    }
+    navigator.context.pushNamed('/settings/');
+  });
   AppDeepLinks().start();
   registerEchHttpLicenses();
   MediaKit.ensureInitialized();

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:media_kit/media_kit.dart';
 
+import '../nagi_suite_channel.dart';
 import '../nagi_theme.dart';
 import 'browse_pages.dart';
 import 'emby_api.dart';
@@ -13,10 +14,18 @@ import 'widgets.dart';
 
 Future<void> nagiVideoMain() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Nagisaland：左滑分区栏 = 回到影视首页并切到「设置」分页
+  installNagiSuiteChannel(openSettings: () {
+    _videoNavigatorKey.currentState?.popUntil((r) => r.isFirst);
+    _settingsRequest.value++;
+  });
   MediaKit.ensureInitialized();
   await VideoStore.instance.load();
   runApp(const NagiVideoApp());
 }
+
+final _videoNavigatorKey = GlobalKey<NavigatorState>();
+final _settingsRequest = ValueNotifier<int>(0);
 
 class NagiVideoApp extends StatelessWidget {
   const NagiVideoApp({super.key});
@@ -25,6 +34,7 @@ class NagiVideoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = NagiTheme.apply(ThemeData(useMaterial3: true, brightness: Brightness.dark));
     return MaterialApp(
+      navigatorKey: _videoNavigatorKey,
       title: '影视',
       debugShowCheckedModeBanner: false,
       theme: theme,
@@ -49,15 +59,46 @@ class VideoHome extends StatelessWidget {
     // 底部已经有原生的 Nagisaland 分区栏，这里的三个分页放在顶部
     return DefaultTabController(
       length: 3,
-      child: Scaffold(
+      child: _SettingsTabSwitch(child: Scaffold(
         appBar: AppBar(
           title: const Text('影视'),
           bottom: const TabBar(tabs: [Tab(text: '服务器'), Tab(text: '聚合视界'), Tab(text: '设置')]),
         ),
         body: const TabBarView(children: [ServersTab(), AggregateTab(), SettingsTab()]),
-      ),
+      )),
     );
   }
+}
+
+/// 收到「打开设置」时切到第 3 个分页（设置）
+class _SettingsTabSwitch extends StatefulWidget {
+  const _SettingsTabSwitch({required this.child});
+  final Widget child;
+
+  @override
+  State<_SettingsTabSwitch> createState() => _SettingsTabSwitchState();
+}
+
+class _SettingsTabSwitchState extends State<_SettingsTabSwitch> {
+  void _onRequest() {
+    if (!mounted) return;
+    DefaultTabController.maybeOf(context)?.animateTo(2);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _settingsRequest.addListener(_onRequest);
+  }
+
+  @override
+  void dispose() {
+    _settingsRequest.removeListener(_onRequest);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 // ---------------------------------------------------------------- 服务器

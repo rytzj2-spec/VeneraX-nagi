@@ -35,6 +35,12 @@ class DownloadTask {
   CancelToken cancelToken;
   bool isPaused;
 
+  /// Nagisaland：这一次失败是不是网络原因（连接断开、超时…），是的话自动重试
+  bool lastFailureRetryable = false;
+
+  /// Nagisaland：这一轮失败后一定会自动重试（不把「失败」通知出去，免得下载服务以为没活了而停掉）
+  bool willAutoRetry = false;
+
   DownloadTask({
     required this.recordKey,
     required this.episodeNumber,
@@ -391,7 +397,77 @@ class DownloadManager implements IDownloadManager {
     }
   }
 
+  // Nagisaland：网络原因失败时自动重试（等待秒数）；这一轮有进展就重新计数
+  static const _autoRetryDelays = [3, 10, 30, 60, 120];
+
   Future<void> _runEpisodeDownload({
+    required DownloadTask task,
+    required int bangumiId,
+    required String pluginName,
+    required String m3u8Url,
+    required Map<String, String> httpHeaders,
+    required bool adBlockerEnabled,
+    required DownloadEpisode episode,
+  }) async {
+    final key = _taskKey(task.recordKey, task.episodeNumber);
+    var attempt = 0;
+    try {
+      while (true) {
+        final bytesBefore = episode.totalBytes;
+        final segmentsBefore = episode.downloadedSegments;
+        task.lastFailureRetryable = false;
+        task.willAutoRetry = attempt < _autoRetryDelays.length;
+        await _runEpisodeAttempt(
+          task: task,
+          bangumiId: bangumiId,
+          pluginName: pluginName,
+          m3u8Url: m3u8Url,
+          httpHeaders: httpHeaders,
+          adBlockerEnabled: adBlockerEnabled,
+          episode: episode,
+        );
+        bool stopped() =>
+            task.isPaused ||
+            task.cancelToken.isCancelled ||
+            !identical(_activeTasks[key], task);
+        if (stopped()) break;
+        if (episode.status != DownloadStatus.failed ||
+            !task.lastFailureRetryable) {
+          break;
+        }
+        if (episode.totalBytes > bytesBefore ||
+            episode.downloadedSegments > segmentsBefore) {
+          attempt = 0; // 这一轮下到了东西：不算连续失败
+        }
+        if (attempt >= _autoRetryDelays.length) break;
+        final wait = _autoRetryDelays[attempt++];
+        final reason = episode.errorMessage;
+        KazumiLogger().w(
+          'DownloadManager: episode ${task.episodeNumber} failed ($reason), '
+          'auto retry #$attempt in ${wait}s',
+        );
+        episode.status = DownloadStatus.downloading;
+        episode.errorMessage = '连接断开，$wait 秒后自动重试（第 $attempt 次）';
+        _notifyProgress(task, episode);
+        for (var i = 0; i < wait * 2 && !stopped(); i++) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+        if (stopped()) {
+          if (task.isPaused) {
+            episode.status = DownloadStatus.paused;
+            episode.errorMessage = '';
+            _notifyProgress(task, episode);
+          }
+          break;
+        }
+        episode.errorMessage = '';
+      }
+    } finally {
+      _onTaskComplete(task);
+    }
+  }
+
+  Future<void> _runEpisodeAttempt({
     required DownloadTask task,
     required int bangumiId,
     required String pluginName,
@@ -406,6 +482,7 @@ class DownloadManager implements IDownloadManager {
           episode, bangumiId, pluginName, task.episodeNumber);
 
       episode.status = DownloadStatus.downloading;
+      episode.errorMessage = '';
       episode.networkM3u8Url = m3u8Url;
       _notifyProgress(task, episode);
 
@@ -593,6 +670,7 @@ class DownloadManager implements IDownloadManager {
       if (failedCount > 0) {
         episode.status = DownloadStatus.failed;
         episode.errorMessage = '$failedCount 个分片下载失败';
+        task.lastFailureRetryable = true;
         _notifyProgress(task, episode);
         return;
       }
@@ -640,17 +718,25 @@ class DownloadManager implements IDownloadManager {
       } else {
         episode.status = DownloadStatus.failed;
         episode.errorMessage = e.message;
+        task.lastFailureRetryable = true;
       }
       _notifyProgress(task, episode);
     } catch (e) {
       episode.status = DownloadStatus.failed;
       episode.errorMessage = e.toString();
+      task.lastFailureRetryable = _isNetworkError(e);
       _notifyProgress(task, episode);
       KazumiLogger().e('DownloadManager: episode download failed', error: e);
-    } finally {
-      _onTaskComplete(task);
     }
   }
+
+  /// Nagisaland：dio 以外直接从 socket 抛出来的网络错误（Connection closed while receiving data 等）
+  static bool _isNetworkError(Object e) =>
+      e is HttpException ||
+      e is SocketException ||
+      e is TimeoutException ||
+      e is HandshakeException ||
+      e is DioException;
 
   Future<void> _runDirectFileDownload({
     required DownloadTask task,
@@ -667,6 +753,30 @@ class DownloadManager implements IDownloadManager {
 
       final filePath = path.join(episodeDir, 'video.mp4');
       final tmpPath = '$filePath.tmp';
+
+      // Nagisaland：服务器支持分段请求（Range → 206）时，多连接分块下载
+      final rangeTotal =
+          await _probeRangeTotal(videoUrl, httpHeaders, task.cancelToken);
+      if (rangeTotal != null && rangeTotal > 0) {
+        await _runChunkedDownload(
+          task: task,
+          key: key,
+          videoUrl: videoUrl,
+          httpHeaders: httpHeaders,
+          episode: episode,
+          filePath: filePath,
+          tmpPath: tmpPath,
+          total: rangeTotal,
+        );
+        return;
+      }
+      // 不支持分段：上次分块下了一半的文件没法接着用（中间有空洞），重新下
+      final chunkLog = File('$tmpPath.chunks');
+      if (await chunkLog.exists()) {
+        await chunkLog.delete();
+        final stale = File(tmpPath);
+        if (await stale.exists()) await stale.delete();
+      }
 
       int existingBytes = 0;
       final tmpFile = File(tmpPath);
@@ -785,15 +895,268 @@ class DownloadManager implements IDownloadManager {
       } else {
         episode.status = DownloadStatus.failed;
         episode.errorMessage = e.message;
+        task.lastFailureRetryable = true;
       }
       _notifyProgress(task, episode);
     } catch (e) {
       episode.status = DownloadStatus.failed;
       episode.errorMessage = e.toString();
+      task.lastFailureRetryable = _isNetworkError(e);
       _notifyProgress(task, episode);
       KazumiLogger()
           .e('DownloadManager: direct file download failed', error: e);
     }
+  }
+
+  // ---------------------------------------------------------------- Nagisaland：多连接分块下载
+
+  static const _chunkSize = 4 * 1024 * 1024;
+  static const _maxChunkRetries = 6;
+
+  /// 用 `Range: bytes=0-0` 问服务器支不支持分段，支持就返回文件总大小，不支持（或问不出来）返回 null
+  Future<int?> _probeRangeTotal(
+      String url, Map<String, String> headers, CancelToken cancelToken) async {
+    final h = Map<String, String>.from(headers)..['Range'] = 'bytes=0-0';
+    Response<ResponseBody> r;
+    try {
+      r = await _http.getStream(
+        url,
+        headers: h,
+        receiveTimeout: const Duration(seconds: 30),
+        cancelToken: cancelToken,
+      );
+    } on NetworkException catch (e) {
+      if (e.type == NetworkExceptionType.cancel) rethrow;
+      return null;
+    } catch (_) {
+      return null;
+    }
+    try {
+      if (r.statusCode != 206) return null;
+      final cr = r.headers.value('content-range');
+      final m = cr == null ? null : RegExp(r'/(\d+)\s*$').firstMatch(cr);
+      return m == null ? null : int.tryParse(m.group(1)!);
+    } finally {
+      // 只要响应头：不读内容直接断开（服务器忽略 Range 回 200 时，不会把整个文件读下来）
+      try {
+        await r.data?.stream.listen(null).cancel();
+      } catch (_) {}
+    }
+  }
+
+  /// 把文件切成 [_chunkSize] 的块，用 [maxParallelSegments] 条连接同时下；下完的块号记在 `<tmp>.chunks`，
+  /// 暂停 / 断开后只补没下完的块。每块断了从断开的位置接着请求，最多重试 [_maxChunkRetries] 次。
+  Future<void> _runChunkedDownload({
+    required DownloadTask task,
+    required String key,
+    required String videoUrl,
+    required Map<String, String> httpHeaders,
+    required DownloadEpisode episode,
+    required String filePath,
+    required String tmpPath,
+    required int total,
+  }) async {
+    final chunkCount = (total + _chunkSize - 1) ~/ _chunkSize;
+    int chunkLen(int i) => i == chunkCount - 1 ? total - i * _chunkSize : _chunkSize;
+
+    final tmpFile = File(tmpPath);
+    final logFile = File('$tmpPath.chunks');
+    final done = <int>{};
+    var convertedFromSingle = false;
+    if (await logFile.exists()) {
+      for (final line in await logFile.readAsLines()) {
+        final i = int.tryParse(line.trim());
+        if (i != null && i >= 0 && i < chunkCount) done.add(i);
+      }
+      if (!await tmpFile.exists() || await tmpFile.length() != total) {
+        done.clear(); // 记录和文件对不上：从头来
+      }
+    } else if (await tmpFile.exists()) {
+      // 以前单连接顺序下了一半：前面完整的块直接算下完
+      final len = await tmpFile.length();
+      if (len <= total) {
+        for (var i = 0; i < chunkCount; i++) {
+          if (i * _chunkSize + chunkLen(i) <= len) done.add(i);
+        }
+        convertedFromSingle = done.isNotEmpty;
+      } else {
+        await tmpFile.delete();
+      }
+    }
+    if (done.isEmpty && await logFile.exists()) await logFile.delete();
+
+    // 预分配到完整大小，各连接按位置写
+    {
+      final raf = await tmpFile.open(mode: FileMode.append);
+      try {
+        if (await raf.length() != total) await raf.truncate(total);
+      } finally {
+        await raf.close();
+      }
+    }
+    final log = logFile.openWrite(mode: FileMode.append);
+    if (convertedFromSingle) {
+      for (final i in done) {
+        log.writeln(i); // 旧单连接进度转换过来的也记下
+      }
+    }
+
+    var doneBytes = 0;
+    for (final i in done) {
+      doneBytes += chunkLen(i);
+    }
+    final inflight = <int, int>{};
+    final pending = <int>[
+      for (var i = 0; i < chunkCount; i++)
+        if (!done.contains(i)) i
+    ];
+    var nextIdx = 0;
+    Object? failure;
+    StackTrace? failureStack;
+    bool stopped() =>
+        failure != null || task.isPaused || task.cancelToken.isCancelled;
+
+    episode.totalSegments = chunkCount;
+    episode.downloadedSegments = done.length;
+    episode.totalBytes = doneBytes;
+    episode.progressPercent = doneBytes / total;
+    _speedTrackers[key] = _SpeedTracker().._lastBytes = doneBytes;
+    _notifyProgress(task, episode);
+
+    var lastNotify = DateTime.now();
+    void report({bool force = false}) {
+      var received = doneBytes;
+      for (final v in inflight.values) {
+        received += v;
+      }
+      episode.totalBytes = received;
+      episode.downloadedSegments = done.length;
+      episode.progressPercent = received / total;
+      _speedTrackers[key]?.update(received);
+      final now = DateTime.now();
+      if (force || now.difference(lastNotify).inMilliseconds >= 250) {
+        lastNotify = now;
+        _notifyProgress(task, episode);
+      }
+    }
+
+    Future<void> fetchChunk(RandomAccessFile raf, int i) async {
+      final start = i * _chunkSize;
+      final end = start + chunkLen(i) - 1;
+      var got = 0;
+      var retries = 0;
+      while (true) {
+        if (stopped()) return;
+        try {
+          final h = Map<String, String>.from(httpHeaders)
+            ..['Range'] = 'bytes=${start + got}-$end';
+          final resp = await _http.getStream(
+            videoUrl,
+            headers: h,
+            receiveTimeout: const Duration(seconds: 60),
+            cancelToken: task.cancelToken,
+          );
+          if (resp.statusCode != 206) {
+            try {
+              await resp.data?.stream.listen(null).cancel();
+            } catch (_) {}
+            throw StateError('服务器不再支持分段下载（${resp.statusCode}）');
+          }
+          await raf.setPosition(start + got);
+          final want = end - start + 1;
+          await for (final data in resp.data!.stream) {
+            if (stopped()) break;
+            final take = got + data.length > want ? want - got : data.length;
+            if (take > 0) {
+              await raf.writeFrom(data, 0, take);
+              got += take;
+              inflight[i] = got;
+              report();
+            }
+            if (got >= want) break;
+          }
+          if (stopped()) return;
+          if (got >= want) return;
+          throw const HttpException('连接提前断开');
+        } catch (e) {
+          if (stopped()) return;
+          if (e is NetworkException && e.type == NetworkExceptionType.cancel) {
+            return;
+          }
+          final retryable = e is NetworkException || _isNetworkError(e);
+          if (!retryable || ++retries > _maxChunkRetries) rethrow;
+          KazumiLogger().w(
+              'DownloadManager: chunk $i retry #$retries after error', error: e);
+          await Future.delayed(Duration(seconds: retries < 5 ? 1 << retries : 30));
+        }
+      }
+    }
+
+    Future<void> worker() async {
+      final raf = await tmpFile.open(mode: FileMode.append);
+      try {
+        while (!stopped() && nextIdx < pending.length) {
+          final i = pending[nextIdx++];
+          inflight[i] = 0;
+          try {
+            await fetchChunk(raf, i);
+          } catch (e, st) {
+            failure ??= e;
+            failureStack ??= st;
+            return;
+          }
+          final completed = (inflight.remove(i) ?? 0) >= chunkLen(i);
+          if (completed && !done.contains(i)) {
+            done.add(i);
+            doneBytes += chunkLen(i);
+            log.writeln(i);
+            report();
+          }
+        }
+      } finally {
+        await raf.close();
+      }
+    }
+
+    final workers = maxParallelSegments.clamp(1, 16);
+    try {
+      await Future.wait([
+        for (var w = 0; w < workers && w < pending.length; w++) worker()
+      ]);
+    } finally {
+      await log.flush();
+      await log.close();
+    }
+    report(force: true);
+
+    if (failure != null) {
+      Error.throwWithStackTrace(failure!, failureStack ?? StackTrace.current);
+    }
+    if (task.isPaused || task.cancelToken.isCancelled) {
+      if (task.isPaused) episode.status = DownloadStatus.paused;
+      _notifyProgress(task, episode);
+      return;
+    }
+    if (done.length != chunkCount) {
+      throw const HttpException('有块没下完');
+    }
+
+    await tmpFile.rename(filePath);
+    try {
+      await logFile.delete();
+    } catch (_) {}
+
+    episode.status = DownloadStatus.completed;
+    episode.localM3u8Path = filePath;
+    episode.downloadedSegments = chunkCount;
+    episode.progressPercent = 1.0;
+    episode.completedAt = DateTime.now();
+    episode.totalBytes = await File(filePath).length();
+    _notifyProgress(task, episode);
+    KazumiLogger().i(
+      'DownloadManager: episode ${task.episodeNumber} completed (chunked, '
+      '$workers connections). ${(episode.totalBytes / 1024 / 1024).toStringAsFixed(1)} MB',
+    );
   }
 
   void _onTaskComplete(DownloadTask task) {
@@ -811,6 +1174,12 @@ class DownloadManager implements IDownloadManager {
     final key = _taskKey(task.recordKey, task.episodeNumber);
     // Cancelled or superseded tasks no longer own the episode.
     if (!identical(_activeTasks[key], task)) return;
+    if (episode.status == DownloadStatus.failed &&
+        task.lastFailureRetryable &&
+        task.willAutoRetry &&
+        !task.isPaused) {
+      return; // 马上自动重试，见 _runEpisodeDownload
+    }
     final speed = _speedTrackers[key]?.currentSpeed ?? 0.0;
     onProgress?.call(task.recordKey, task.episodeNumber, episode, speed);
   }

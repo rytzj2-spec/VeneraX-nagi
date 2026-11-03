@@ -22,7 +22,9 @@ import androidx.core.graphics.Insets
 import androidx.core.graphics.PathParser
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
+import io.flutter.plugin.common.MethodChannel
 import io.github.kyosee.venera.MainActivity
 import io.github.kyosee.venera.kazumi.KazumiActivity
 import io.github.kyosee.venera.kazumi.KazumiEngine
@@ -168,6 +170,48 @@ object SuiteNav {
         val a = nagiRef?.get() ?: return
         val wv = findWebView(a.window.decorView) ?: return
         wv.post { wv.evaluateJavascript("window.__nagiNavChanged&&window.__nagiNavChanged()", null) }
+    }
+
+    // ---------------------------------------------------------------- 左滑分区栏 = 打开当前分区的设置
+    private const val SUITE_CHANNEL = "nagisaland/suite"
+    private const val H_SETTINGS = "com.yenaly.han1meviewer.ui.activity.SettingsActivity"
+    private val engines = HashMap<String, WeakReference<FlutterEngine>>()
+
+    /** 漫画 / 番剧 / 影视界面的 configureFlutterEngine 里调用：记下引擎，左滑时通过它让 Dart 打开设置页 */
+    @JvmStatic
+    fun registerEngine(key: String, engine: FlutterEngine) {
+        engines[key] = WeakReference(engine)
+    }
+
+    /** 打开某个分区自己的设置：Flutter 分区发 nagisaland/suite 的 openSettings 给 Dart；H 打开它的设置页；主界面交给网页 */
+    @JvmStatic
+    fun openSettings(a: Activity, key: String) {
+        fun fail(why: String) {
+            android.widget.Toast.makeText(a, "打不开设置：$why", android.widget.Toast.LENGTH_SHORT).show()
+        }
+        try {
+            when (key) {
+                "comic", "anime", "video" -> {
+                    val e = engines[key]?.get() ?: return fail("分区还没准备好")
+                    MethodChannel(e.dartExecutor.binaryMessenger, SUITE_CHANNEL)
+                        .invokeMethod("openSettings", null, object : MethodChannel.Result {
+                            override fun success(result: Any?) {}
+                            override fun error(code: String, msg: String?, details: Any?) { fail(msg ?: code) }
+                            override fun notImplemented() { fail("这个分区还不支持") }
+                        })
+                }
+                "h" -> a.startActivity(Intent(a, Class.forName(H_SETTINGS)))
+                else -> {
+                    val wv = findWebView(a.window.decorView) ?: return SuitePanels.showSettings(a)
+                    wv.evaluateJavascript(
+                        "(function(){if(window.__nagiOpenSettings){window.__nagiOpenSettings();return 1}return 0})()"
+                    ) { r -> if (r != "1") SuitePanels.showSettings(a) }
+                }
+            }
+        } catch (e: Throwable) {
+            SuitePerf.error(a, "打开 $key 的设置失败", e)
+            fail(e.message ?: e.javaClass.simpleName)
+        }
     }
 
     /** 在漫画/番剧/影视/H 界面加常驻分区栏（在 onPostCreate 里调用） */
@@ -369,17 +413,34 @@ class SuiteNavBar(ctx: Context, private val current: String, private val onPick:
         } else ((e.x / width) * keys.size).toInt().coerceIn(0, keys.size - 1)
     }
 
+    // 左滑分区栏 = 打开当前分区的设置（只认分区栏上的手势，不和各分区里本来的左右滑冲突）
+    private var downX = 0f
+    private var downY = 0f
+    private var swiped = false
+    private val swipePx = 56 * dp
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val idx = indexAt(e)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downIdx = idx
                 longPressed = false
+                swiped = false
+                downX = e.x; downY = e.y
                 postDelayed(longPress, 500)
+                parent?.requestDisallowInterceptTouchEvent(true)
             }
             MotionEvent.ACTION_UP -> {
                 removeCallbacks(longPress)
-                if (!longPressed && idx >= 0 && idx == downIdx) {
+                val dx = e.x - downX
+                val dy = e.y - downY
+                if (!longPressed && !swiped && -dx > swipePx && -dx > 1.5f * kotlin.math.abs(dy)) {
+                    swiped = true
+                    downIdx = -1
+                    (context as? Activity)?.let { SuiteNav.openSettings(it, current) }
+                    return true
+                }
+                if (!longPressed && !swiped && idx >= 0 && idx == downIdx) {
                     performClick()
                     val k = keys[idx]
                     if (k == "more") (context as? Activity)?.let { SuitePanels.showMore(it, current, onPick) }
@@ -387,7 +448,9 @@ class SuiteNavBar(ctx: Context, private val current: String, private val onPick:
                 }
                 downIdx = -1
             }
-            MotionEvent.ACTION_MOVE -> if (idx != downIdx) removeCallbacks(longPress)
+            MotionEvent.ACTION_MOVE -> {
+                if (idx != downIdx || kotlin.math.abs(e.x - downX) > 12 * dp) removeCallbacks(longPress)
+            }
             MotionEvent.ACTION_CANCEL -> { removeCallbacks(longPress); downIdx = -1 }
         }
         return true

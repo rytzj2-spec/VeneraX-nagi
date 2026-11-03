@@ -173,6 +173,18 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
     （`DANDANAPI_APPID` / `DANDANAPI_KEY`，本地放 `dart_defines.txt`，**没有这个文件时编译命令里的参数要去掉，弹幕就没法用**）。
   - `DanmakuClient`：没凭据直接抛「没有弹弹play 凭据…」；服务器拒绝时带状态码和 `X-Error-Message`（401/403 提示检查凭据和手机时间）。
   - `danmaku_source_sheet.dart`：搜索 / 分集失败时标题下面显示具体原因（`_errorDetail`）。
+- 番剧下载（`packages/kazumi/lib/services/download/download_manager.dart`）：
+  - 单文件 mp4（「0/1 分片」）以前只有一条连接、断了就失败，「分片并发数」对它没用。现在先发 `Range: bytes=0-0` 探测，
+    服务器回 206 就按 4 MB 分块，用「分片并发数」条连接同时下（最多 16），写进预分配的 `video.mp4.tmp`，下完的块号记在 `video.mp4.tmp.chunks`；
+    暂停 / 断开后只补没下完的块（以前单连接下了一半的 .tmp 前面完整的块直接算下完）。每块断了从断点接着请求，最多重试 6 次。
+    服务器不支持分段时还是原来的单连接。
+  - 整集自动重试：网络原因失败（Dio 错误、`HttpException: Connection closed…`、超时、m3u8 分片失败）时 3 / 10 / 30 / 60 / 120 秒后自动重来，
+    这一轮有进展就重新计数；等待时显示「连接断开，N 秒后自动重试」。马上要重试的失败不通知出去（否则下载服务以为没活了会停掉前台服务）。
+- 左滑分区栏 = 打开当前分区的设置（只认分区栏上的手势，不和分区里本来的左右滑、系统返回手势冲突）：
+  - 原生 `SuiteNavBar` 左滑 → `SuiteNav.openSettings`：漫画 / 番剧 / 影视通过 `nagisaland/suite` 通道发 `openSettings` 给 Dart
+    （引擎在各 Activity 的 `configureFlutterEngine` 里 `SuiteNav.registerEngine` 登记）；H 打开 `SettingsActivity`。
+  - Dart 端 `packages/kazumi/lib/nagi_suite_channel.dart`：漫画推 `SettingsPage` 到根导航，番剧 `pushNamed('/settings/')`，影视回首页切「设置」分页。
+  - 主界面网页底栏左滑：游戏库 → 游戏目录设置；小站 / 解压 / 模拟器 → 流畅度设置（`Bridge.suiteSettings`）。
 
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后

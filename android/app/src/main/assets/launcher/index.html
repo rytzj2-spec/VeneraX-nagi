@@ -328,7 +328,22 @@ const App = (() => {
   applyNav();
   // 长按「更多」= 编辑底栏
   $('#nav').addEventListener('contextmenu', e => { if (e.target.closest('button[data-more]')) { e.preventDefault(); if (N.editNav) N.editNav(); } });
+  // 左滑底栏 = 打开当前页的设置：游戏库 → 游戏目录设置；小站 / 解压 / 模拟器 → 流畅度设置（和各分区的原生底栏一样）
+  function openTabSettings() {
+    if ((cur || 'lib') === 'lib') { $('#btnSettings').click(); return; }
+    if (N && N.suiteSettings) N.suiteSettings();
+  }
+  window.__nagiOpenSettings = openTabSettings;
+  let swipeX = 0, swipeY = 0, swipeT = 0, swiped = false;
+  $('#nav').addEventListener('touchstart', e => {
+    const t = e.touches[0]; swipeX = t.clientX; swipeY = t.clientY; swipeT = Date.now(); swiped = false;
+  }, { passive: true });
+  $('#nav').addEventListener('touchend', e => {
+    const t = e.changedTouches[0], dx = t.clientX - swipeX, dy = t.clientY - swipeY;
+    if (-dx > 56 && -dx > 1.5 * Math.abs(dy) && Date.now() - swipeT < 800) { swiped = true; openTabSettings(); }
+  }, { passive: true });
   $('#nav').onclick = e => {
+    if (swiped) { swiped = false; return; }   // 刚才是左滑，不算点击
     if (e.target.closest('button[data-more]')) { if (N.openMore) N.openMore(cur || 'lib'); return; }
     if (e.target.closest('button[data-comic]')) { openComic(); return; }
     if (e.target.closest('button[data-anime]')) { openAnime(); return; }

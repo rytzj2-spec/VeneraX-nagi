@@ -147,6 +147,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        io.github.kyosee.venera.suite.SuiteNav.registerEngine("comic", flutterEngine)
         GeneratedPluginRegistrant.registerWith(flutterEngine)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
