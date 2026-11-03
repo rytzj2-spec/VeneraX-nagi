@@ -81,7 +81,28 @@ Nagisaland 用的 VeneraX 离线优化版（私有，不发布 Release）。基�
 `.github/workflows/suite_build.yml`：推到 suite（或手动运行）→ 编 arm64-v8a，APK 在 Artifacts（Nagisaland-suite-arm64），
 suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式签名在用户电脑上用 merge_venerax.py 合并时做。
 
-## 用户电脑上的部分（不在仓库里）
+## 2026-11-03 统一成一个应用（unify-app 分支）
+以前：CI 编 suite APK（漫画 + 番剧 + H）→ 电脑上 merge_venerax.py 反编译，拼进 Nagisaland 主界面的 smali → 签名。
+现在：**一个工程直接编出完整的 `com.nagisaland.mobile`**，电脑上只剩「加模拟器 + 正式签名」。
+- Nagisaland 主界面（原来只有 smali，Java 源码丢了）改写成 Kotlin：`android/app/src/main/kotlin/com/nagisaland/mobile/`
+  - `MainActivity`（全屏 WebView）、`GameClient`（虚拟域名 → 游戏文件夹 / assets）、`Bridge`（`window.NagisaNative`，接口名不变）、
+    `Ops`（文件 / 7-Zip / 网络 / 安装）、`Files`（`<包名>.files` 文件共享）、`HttpJob` / `DeleteJob`、`Ocr.kt`（识屏翻译，`window.Ocr`）
+  - 启动器网页 `assets/launcher/`、注入游戏的 `assets/bridge-*.js` 原样复用；7-Zip 在 `jniLibs/*/lib7zz.so`
+- merge_venerax.py 做的事都在源码里：`applicationId com.nagisaland.mobile`（authority 都用 `${applicationId}`）；桌面只有 Nagisaland 一个图标
+  （VeneraX 换图标的别名没有桌面入口）；VeneraX 不再认 http/https 链接；各分区同一任务（去掉 taskAffinity，Kazumi singleTop）；
+  主界面 onPause 不调用全局 `pauseTimers()`；`comic/anime/h.json` 指向 `SuiteSwitchActivity`。
+- 版本号：安卓的 versionName / versionCode 在 `android/nagisaland.properties`；VeneraX 自己的版本号写死在 `lib/foundation/app.dart`
+  的 `veneraXVersion`（漫画源 minAppVersion 检查用），以前靠 merge_venerax.py 改 package_info_plus。
+- `targetSdk` 固定 34（和以前合并版一样），`minSdk` 至少 24。
+- 行为改动：游戏库根页面按返回 → 整个 App 退到后台（以前 finishAndRemoveTask 会把各分区一起关掉）。
+- 统一主题：`packages/kazumi/lib/nagi_theme.dart`（背景 #0f0f12，文字 #fafaf9 / #a1a1aa，主色 #e879a9，副色 #a78bfa），
+  漫画（`lib/main.dart`）和番剧（`app_widget.dart`）固定深色并套用；H 在 `android/han/src/main/res/values/themes.xml`，并关掉壁纸动态取色。
+  开关：`kNagiUnifiedTheme`、`NAGI_UNIFIED_THEME`。底栏仍是 `SuiteNavBar`。主界面网页的 `--bg / --text / --sub` 也改成同样的值。
+- 出正式包：Actions 产物 `Nagisaland-v<版本>-…-arm64-v8a.apk` 放进 Nagisaland-Mobile 的 `ci\`，双击「出正式包.bat」（`sign_release.py`）：
+  加 `emulators\` 里的模拟器、生成 `emulators.json`、用 `nagisaland-mobile.keystore` 签名 → `dist\Nagisaland_v<版本>.apk`。
+- 上游同步：见 `doc/上游同步.md`。
+
+## 用户电脑上的部分（不在仓库里；统一版之前的旧流程）
 - merge_venerax.py：取 suite APK；provider authority 改成 Nagisaland 包名（现在有 `.fileprovider`、`.androidx-startup`、
   `.hanime.fileprovider` 三个）；Nagisaland 主界面改 singleTop（Kazumi 在源码里已经是 singleTop）；
   删掉 Nagisaland 主界面 onPause 里的 `WebView.pauseTimers()`（它是全局的，会冻结番剧解析用的 WebView）；

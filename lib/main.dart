@@ -1,3 +1,4 @@
+import 'package:kazumi/nagi_theme.dart';
 import 'package:kazumi/main.dart' as kazumi_app;
 import 'dart:async';
 import 'package:desktop_webview_window/desktop_webview_window.dart';
@@ -278,11 +279,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         title: "VeneraX",
         home: home,
         debugShowCheckedModeBanner: false,
-        theme: getTheme(primary, secondary, tertiary, Brightness.light),
+        // Nagisaland 统一主题（packages/kazumi/lib/nagi_theme.dart）：固定深色，和番剧、主界面一致
+        theme: kNagiUnifiedTheme
+            ? NagiTheme.apply(getTheme(primary, secondary, tertiary, Brightness.dark))
+            : getTheme(primary, secondary, tertiary, Brightness.light),
         navigatorKey: App.rootNavigatorKey,
         navigatorObservers: [App.rootRouteObserver],
-        darkTheme: getTheme(primary, secondary, tertiary, Brightness.dark),
-        themeMode: switch (appdata.settings['theme_mode']) {
+        darkTheme: kNagiUnifiedTheme
+            ? NagiTheme.apply(getTheme(primary, secondary, tertiary, Brightness.dark))
+            : getTheme(primary, secondary, tertiary, Brightness.dark),
+        themeMode: kNagiUnifiedTheme ? ThemeMode.dark : switch (appdata.settings['theme_mode']) {
           'light' => ThemeMode.light,
           'dark' => ThemeMode.dark,
           _ => ThemeMode.system

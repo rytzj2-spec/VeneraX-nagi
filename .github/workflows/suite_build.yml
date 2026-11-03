@@ -1,6 +1,6 @@
 # Nagisaland 手机版（suite 分支）：Nagisaland 主界面 + 漫画 VeneraX + 番剧 Kazumi + H（Han1meViewer）
 # 一个工程编出完整的 com.nagisaland.mobile，Android arm64-v8a。
-# - 推到 suite / unify-* 自动编译；也可以在 Actions 里手动运行（可选任意分支）。
+# - 推到 suite / unify-* / sync-* 自动编译；也可以在 Actions 里手动运行（可选任意分支）。
 # - APK 在该次运行的 Artifacts（Nagisaland-suite-arm64），suite 分支的构建还会推到 apk-suite 分支。
 # - 用一次性的临时密钥签名；正式签名（nagisaland-mobile.keystore）和内置模拟器 APK 在用户电脑上用
 #   Nagisaland-Mobile 仓库的 sign_release.py 加，密钥不进仓库。
@@ -12,7 +12,7 @@ run-name: Nagisaland suite build (${{ github.ref_name }} ${{ github.sha }})
 on:
   workflow_dispatch:
   push:
-    branches: [suite, "unify-*"]
+    branches: [suite, "unify-*", "sync-*"]
     paths-ignore:
       - "**.md"
       - "doc/**"

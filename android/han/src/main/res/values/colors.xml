@@ -39,4 +39,10 @@
     <color name="per90_dark_red">#E6100000</color>
     <color name="adv_search_unselected_color">#FF495057</color>
     <color name="adv_search_selected_color">#FF28A745</color>
+    <!-- Nagisaland 统一主题 -->
+    <color name="nagi_bg">#FF0F0F12</color>
+    <color name="nagi_text">#FFFAFAF9</color>
+    <color name="nagi_sub">#FFA1A1AA</color>
+    <color name="nagi_pink">#FFE879A9</color>
+    <color name="nagi_violet">#FFA78BFA</color>
 </resources>

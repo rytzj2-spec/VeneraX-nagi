@@ -1,3 +1,4 @@
+import 'package:kazumi/nagi_theme.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -310,9 +311,10 @@ class _AppWidgetState extends State<AppWidget>
           ],
           locale: const Locale.fromSubtags(
               languageCode: 'zh', scriptCode: 'Hans', countryCode: "CN"),
-          theme: lightTheme,
-          darkTheme: effectiveDarkTheme,
-          themeMode: themeProvider.themeMode,
+          // Nagisaland 统一主题（nagi_theme.dart）：固定深色，和漫画、主界面一致
+          theme: kNagiUnifiedTheme ? NagiTheme.apply(dynamicDarkTheme) : lightTheme,
+          darkTheme: kNagiUnifiedTheme ? NagiTheme.apply(dynamicDarkTheme) : effectiveDarkTheme,
+          themeMode: kNagiUnifiedTheme ? ThemeMode.dark : themeProvider.themeMode,
           scaffoldMessengerKey: rootScaffoldMessengerKey,
           routerConfig: ModularApp.routerConfigOf(context),
         );

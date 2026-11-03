@@ -5,7 +5,29 @@
         <!--        <item name="android:statusBarColor">?android:colorBackground</item>-->
         <!--        <item name="android:navigationBarColor">?android:colorBackground</item>-->
         <item name="android:windowTranslucentStatus">false</item>
-        <!-- Customize your theme here. -->
+        <!-- Nagisaland 统一主题（和漫画 / 番剧的 nagi_theme.dart、网页底栏一致） -->
+        <item name="colorPrimary">@color/nagi_pink</item>
+        <item name="colorOnPrimary">#FF18181B</item>
+        <item name="colorPrimaryContainer">#FF4A2238</item>
+        <item name="colorOnPrimaryContainer">#FFFBCFE8</item>
+        <item name="colorSecondary">@color/nagi_violet</item>
+        <item name="colorOnSecondary">#FF18181B</item>
+        <item name="colorSecondaryContainer">#FF2E2650</item>
+        <item name="colorOnSecondaryContainer">#FFDDD6FE</item>
+        <item name="colorTertiary">#FFF0ABFC</item>
+        <item name="colorOnTertiary">#FF18181B</item>
+        <item name="android:colorBackground">@color/nagi_bg</item>
+        <item name="android:windowBackground">@color/nagi_bg</item>
+        <item name="colorSurface">@color/nagi_bg</item>
+        <item name="colorOnSurface">@color/nagi_text</item>
+        <item name="colorOnSurfaceVariant">@color/nagi_sub</item>
+        <item name="colorSurfaceContainerLowest">#FF0A0A0D</item>
+        <item name="colorSurfaceContainerLow">#FF16161B</item>
+        <item name="colorSurfaceContainer">#FF1C1C22</item>
+        <item name="colorSurfaceContainerHigh">#FF23232B</item>
+        <item name="colorSurfaceContainerHighest">#FF2A2A33</item>
+        <item name="colorOutline">#FF3F3F4A</item>
+        <item name="colorOutlineVariant">#FF2A2A36</item>
     </style>
 
 
