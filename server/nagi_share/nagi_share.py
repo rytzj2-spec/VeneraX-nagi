@@ -22,6 +22,7 @@ import logging
 import secrets
 import time
 import urllib.request
+import urllib.error
 
 import websockets
 
@@ -54,9 +55,15 @@ def _cloudflare_ice():
     url = "https://rtc.live.cloudflare.com/v1/turn/keys/%s/credentials/generate-ice-servers" % cf["key_id"]
     req = urllib.request.Request(
         url, data=json.dumps({"ttl": 43200}).encode(), method="POST",
-        headers={"Authorization": "Bearer " + cf["api_token"], "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=10) as r:
-        data = json.loads(r.read().decode())
+        headers={"Authorization": "Bearer " + cf["api_token"], "Content-Type": "application/json",
+                 # Cloudflare 会拦默认的 "Python-urllib/x.y" UA（403 / error 1010），换一个
+                 "User-Agent": "nagi-share/1.0 (+https://github.com/rytzj2-spec)", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read()[:300].decode("utf-8", "replace")
+        raise RuntimeError("HTTP %s: %s" % (e.code, body)) from None
     servers = data.get("iceServers") or []
     if isinstance(servers, dict):
         servers = [servers]
