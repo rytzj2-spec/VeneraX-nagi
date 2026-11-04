@@ -357,11 +357,8 @@ class _InfoPageState extends State<InfoPage>
       }
       final best = candidates.first;
       KazumiDialog.showToast(
-        message: '已自动选择「${best.plugin.name}」（${candidates.length} 个源可用，${(best.elapsed.inMilliseconds / 1000).toStringAsFixed(1)} 秒）',
-        showActionButton: true,
-        actionLabel: '手动选源',
-        onActionPressed: _openSourceSheet,
-        duration: const Duration(seconds: 5),
+        message: '已自动选择「${best.plugin.name}」（${candidates.length} 个源可用；想换源：返回后点「选源」）',
+        duration: const Duration(seconds: 4),
       );
       task.withContext((context) => context.pushNamed(
             '/video/',
@@ -527,20 +524,31 @@ class _InfoPageState extends State<InfoPage>
           );
         }),
       ),
-      // Nagisaland：点 = 自动选源直接播；长按 = 手动选源
-      floatingActionButton: GestureDetector(
-        onLongPress: () {
-          if (widget.pluginsController.pluginList.isEmpty) {
-            _startWatching();
-          } else {
-            _openSourceSheet();
-          }
-        },
-        child: FloatingActionButton.extended(
-          onPressed: _startWatching,
-          label: const Text('开始观看'),
-          icon: const Icon(Icons.play_arrow_rounded),
-        ),
+      // Nagisaland：「开始观看」= 自动选源直接播；旁边「选源」= 手动选源（原来的开始观看）。
+      // 以前手动选源只能长按，或点播放后提示里的按钮（那时已经进了播放页，选源面板在下面看不到），等于用不了。
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'nagi_pick_source',
+            onPressed: () {
+              if (widget.pluginsController.pluginList.isEmpty) {
+                _startWatching();
+              } else {
+                _openSourceSheet();
+              }
+            },
+            label: const Text('选源'),
+            icon: const Icon(Icons.list_rounded),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton.extended(
+            heroTag: 'nagi_start_watching',
+            onPressed: _startWatching,
+            label: const Text('开始观看'),
+            icon: const Icon(Icons.play_arrow_rounded),
+          ),
+        ],
       ),
     );
   }
