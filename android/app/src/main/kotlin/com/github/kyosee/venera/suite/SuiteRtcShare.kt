@@ -106,7 +106,30 @@ object SuiteRtcShare {
     fun savePrefer(ctx: Context, v: Int) = prefs(ctx).edit().putInt("prefer", v).apply()
     fun saveTurn(ctx: Context, v: String) = prefs(ctx).edit().putString("turn", v).apply()
 
-    val QUALITY_LABELS = listOf("自动", "清晰", "标准", "省流")
+    val QUALITY_LABELS = listOf("自动", "清晰", "标准", "省流")   // 旧版档位（只用来兼容旧设置）
+
+    // 分辨率 / 帧率 / 码率上限：开始前和共享中都能改，改了马上生效
+    val RES_LABELS = listOf("720p", "1080p", "原生")
+    private val RES_SIDE = listOf(1280, 1920, 0)                 // 0 = 手机原始分辨率
+    val FPS_LABELS = listOf("30 帧", "60 帧")
+    private val FPS_VALUES = listOf(30, 60)
+    val RATE_LABELS = listOf("自动", "4M", "8M", "16M")
+    private val RATE_MAX = listOf(10_000_000, 4_000_000, 8_000_000, 16_000_000)
+    fun res(ctx: Context) = prefs(ctx).getInt("res", 1)
+    fun fpsIdx(ctx: Context) = prefs(ctx).getInt("fps", 0)
+    fun rate(ctx: Context) = prefs(ctx).getInt("rate", 0)
+    fun fps(ctx: Context) = FPS_VALUES.getOrElse(fpsIdx(ctx)) { 30 }
+    fun currentQuality(ctx: Context): Quality {
+        val max = RATE_MAX.getOrElse(rate(ctx)) { RATE_MAX[0] }
+        return Quality(start = minOf(max, 3_000_000), min = 300_000, max = max, maxSide = RES_SIDE.getOrElse(res(ctx)) { 1920 })
+    }
+    /** 改画质：存下来；正在共享就马上应用 */
+    fun setLive(ctx: Context, res: Int? = null, fps: Int? = null, rate: Int? = null) {
+        val e = prefs(ctx).edit()
+        res?.let { e.putInt("res", it) }; fps?.let { e.putInt("fps", it) }; rate?.let { e.putInt("rate", it) }
+        e.apply()
+        service?.applyLive(currentQuality(ctx), fps(ctx))
+    }
     val PREFER_LABELS = listOf("流畅优先", "清晰优先", "平衡")
     val TURN_LABELS = linkedMapOf("auto" to "自动", "cloudflare" to "Cloudflare", "coturn" to "自建")
 
@@ -237,7 +260,6 @@ class SuiteRtcShareService : Service() {
         const val ACTION_STOP = "nagisaland.rtcshare.STOP"
         private const val TAG = "nagi-rtc"
         private const val NOTIFY_ID = 0x5352
-        private const val FPS = 30
         private const val RATE = 48000
         private val BACKOFF = longArrayOf(1, 2, 4, 8, 15, 30)
         @Volatile private var factoryInitialized = false
@@ -297,6 +319,7 @@ class SuiteRtcShareService : Service() {
     private val peers = HashMap<String, Peer>()
 
     private var quality = SuiteRtcShare.qualityOf(0)
+    private var fps = 30
     private var prefer = 0
     @Volatile private var stopped = false
     private var displayListener: DisplayManager.DisplayListener? = null
@@ -324,11 +347,12 @@ class SuiteRtcShareService : Service() {
         if (data == null) { stopSelf(); return START_NOT_STICKY }
         serverBase = intent.getStringExtra("server").orEmpty()
         password = intent.getStringExtra("password").orEmpty()
-        quality = SuiteRtcShare.qualityOf(intent.getIntExtra("quality", 0))
+        quality = SuiteRtcShare.currentQuality(this)
+        fps = SuiteRtcShare.fps(this)
         prefer = SuiteRtcShare.prefer(this)
         turnPref = SuiteRtcShare.turn(this)
         SuiteRtcShare.service = this
-        SuiteShareLog.log("==== 开始共享（经服务器 $serverBase，清晰度 ${SuiteRtcShare.QUALITY_LABELS.getOrNull(intent.getIntExtra("quality", 0))}，" +
+        SuiteShareLog.log("==== 开始共享（经服务器 $serverBase，画质 ${SuiteRtcShare.RES_LABELS.getOrNull(SuiteRtcShare.res(this))} / ${fps} 帧 / 上限 ${quality.max / 1_000_000}M，" +
             "${SuiteRtcShare.PREFER_LABELS.getOrNull(prefer)}，中转 $turnPref，录音 $mic，Android ${Build.VERSION.SDK_INT} ${Build.MODEL}）")
         exec.execute {
             try {
@@ -410,7 +434,8 @@ class SuiteRtcShareService : Service() {
         val dm = DisplayMetrics()
         @Suppress("DEPRECATION")
         wm.defaultDisplay.getRealMetrics(dm)
-        val scale = min(1f, quality.maxSide.toFloat() / max(dm.widthPixels, dm.heightPixels))
+        val side = if (quality.maxSide <= 0) max(dm.widthPixels, dm.heightPixels) else quality.maxSide
+        val scale = min(1f, side.toFloat() / max(dm.widthPixels, dm.heightPixels))
         // 硬件编码器喜欢 16 的倍数
         return ((dm.widthPixels * scale).roundToInt() / 16 * 16) to ((dm.heightPixels * scale).roundToInt() / 16 * 16)
     }
@@ -450,7 +475,8 @@ class SuiteRtcShareService : Service() {
         cap.initialize(helper, applicationContext, vs.capturerObserver)
         val (w, h) = captureSize()
         capW = w; capH = h
-        cap.startCapture(w, h, FPS)
+        cap.startCapture(w, h, fps)
+        try { vs.adaptOutputFormat(w, h, fps) } catch (_: Throwable) {}
         SuiteShareLog.log("录屏 ${w}x$h")
         videoTrack = f.createVideoTrack("nagi-video", vs)
         watchRotation()
@@ -468,6 +494,31 @@ class SuiteRtcShareService : Service() {
         }
     }
 
+    /** 共享中改画质（分辨率 / 帧率 / 码率上限）：改采集尺寸、编码参数和码率，不用重新连接 */
+    fun applyLive(q: SuiteRtcShare.Quality, newFps: Int) = exec.execute {
+        if (stopped) return@execute
+        quality = q
+        fps = newFps
+        val (w, h) = captureSize()
+        if (w != capW || h != capH) {
+            capW = w; capH = h
+            capturer?.changeCaptureFormat(w, h, fps)
+        }
+        try { videoSource?.adaptOutputFormat(w, h, fps) } catch (_: Throwable) {}
+        for (p in peers.values) {
+            try {
+                for (sender in p.pc.senders) {
+                    if (sender.track()?.kind() != MediaStreamTrack.VIDEO_TRACK_KIND) continue
+                    val params = sender.parameters
+                    for (en in params.encodings) { en.maxBitrateBps = q.max; en.maxFramerate = fps }
+                    sender.setParameters(params)
+                }
+                p.pc.setBitrate(q.min, null, q.max)
+            } catch (e: Throwable) { Log.w(TAG, "apply live", e) }
+        }
+        SuiteShareLog.log("改画质 → ${w}x$h，${fps} 帧，码率上限 ${q.max / 1_000_000}M")
+    }
+
     /** 横竖屏切换：按新方向改采集大小（resize，不重建） */
     private fun watchRotation() {
         val dmgr = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
@@ -482,7 +533,8 @@ class SuiteRtcShareService : Service() {
                     if (w == capW && h == capH) return@execute
                     capW = w; capH = h
                     SuiteShareLog.log("屏幕方向 / 尺寸变了 → 录屏改成 ${w}x$h")
-                    capturer?.changeCaptureFormat(w, h, FPS)
+                    capturer?.changeCaptureFormat(w, h, fps)
+                    try { videoSource?.adaptOutputFormat(w, h, fps) } catch (_: Throwable) {}
                 }
             }
         }
@@ -755,7 +807,7 @@ class SuiteRtcShareService : Service() {
             try {
                 val p = sender.parameters
                 p.degradationPreference = degradation()
-                for (en in p.encodings) { en.maxBitrateBps = quality.max; en.maxFramerate = FPS }
+                for (en in p.encodings) { en.maxBitrateBps = quality.max; en.maxFramerate = fps }
                 sender.setParameters(p)
             } catch (e: Throwable) { Log.w(TAG, "encoding params", e) }
             // H.264 排第一（硬件编码）；没有 H.264 时 VP8 自然排前面

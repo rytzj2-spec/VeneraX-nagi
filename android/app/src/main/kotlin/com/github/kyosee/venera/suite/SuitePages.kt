@@ -312,9 +312,8 @@ class SuiteTogetherActivity : Activity() {
         val pw = edit(a, "房间密码（可不填；会带在分享链接里）", SuiteRtcShare.password(a))
         c.addView(server)
         c.addView(pw)
-        var q = SuiteRtcShare.quality(a)
-        c.addView(text(a, "清晰度（自动 = 按网络自己调）", 12.5f).apply { setPadding(0, a.dp(8f), 0, 0) })
-        c.addView(choices(a, SuiteRtcShare.QUALITY_LABELS, q) { q = it })
+        val q = SuiteRtcShare.quality(a)
+        addQualityRows(c)
         c.addView(text(a, "网不好时", 12.5f).apply { setPadding(0, a.dp(4f), 0, 0) })
         c.addView(choices(a, SuiteRtcShare.PREFER_LABELS, SuiteRtcShare.prefer(a)) { SuiteRtcShare.savePrefer(a, it) })
         c.addView(text(a, "中转（直连不上时）", 12.5f).apply { setPadding(0, a.dp(4f), 0, 0) })
@@ -367,7 +366,20 @@ class SuiteTogetherActivity : Activity() {
                 ?: Toast.makeText(a, "还在连接服务器…", Toast.LENGTH_SHORT).show()
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         c.addView(row)
+        c.addView(text(a, "画质（改了马上生效）", 12.5f).apply { setPadding(0, a.dp(14f), 0, 0) })
+        addQualityRows(c)
         shareBox.addView(c)
+    }
+
+    /** 分辨率 / 帧率 / 码率上限三排按钮：没在共享时是下次的设置，共享中改了马上生效 */
+    private fun addQualityRows(c: LinearLayout) = with(PageKit) {
+        val a = this@SuiteTogetherActivity
+        c.addView(text(a, "分辨率", 12.5f).apply { setPadding(0, a.dp(8f), 0, 0) })
+        c.addView(choices(a, SuiteRtcShare.RES_LABELS, SuiteRtcShare.res(a)) { SuiteRtcShare.setLive(a, res = it) })
+        c.addView(text(a, "帧率（片源本身 24 帧的番剧选 60 也只有 24）", 12.5f).apply { setPadding(0, a.dp(4f), 0, 0) })
+        c.addView(choices(a, SuiteRtcShare.FPS_LABELS, SuiteRtcShare.fpsIdx(a)) { SuiteRtcShare.setLive(a, fps = it) })
+        c.addView(text(a, "码率上限（自动 = 按网速，最高 10M）", 12.5f).apply { setPadding(0, a.dp(4f), 0, 0) })
+        c.addView(choices(a, SuiteRtcShare.RATE_LABELS, SuiteRtcShare.rate(a)) { SuiteRtcShare.setLive(a, rate = it) })
     }
 
     private fun updateRtcStatus() {
