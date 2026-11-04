@@ -35,7 +35,7 @@ button.p{color:#18181b;background:linear-gradient(90deg,var(--pink),var(--violet
 <div id="top"><span id="st">连接中…</span><span class="tag" id="path" hidden></span><button id="statsBtn">统计</button><button id="fs">全屏</button></div>
 <pre id="stats" hidden></pre>
 <button class="p" id="unmute" hidden>🔊 点一下打开声音</button>
-<div id="bar"><input id="msg" maxlength="200" placeholder="发弹幕 / 聊天（回车发送）"><button class="p" id="send">发送</button><button id="dmt">弹幕：开</button></div>
+<div id="bar"><input id="msg" maxlength="200" placeholder="发弹幕 / 聊天（回车发送）"><button class="p" id="send">发送</button><button id="mic" title="开麦：房主能听到你说话">🎤 关</button><button id="dmt">弹幕：开</button></div>
 <div id="gate" hidden><div class="card">
   <h1>Nagisaland 屏幕共享</h1>
   <p>输入房间号（对方发来的链接里 #r= 后面那几位）。</p>
@@ -49,6 +49,8 @@ button.p{color:#18181b;background:linear-gradient(90deg,var(--pink),var(--violet
 'use strict';
 const $=id=>document.getElementById(id);
 const v=$('v'),st=$('st'),path=$('path');
+const inApp=/NagisalandApp/.test(navigator.userAgent);   // 在 Nagisaland App 里看：自动出声
+let micTrack=null;
 const q=new URLSearchParams(location.hash.slice(1));
 let room=(q.get('r')||'').trim().toLowerCase(), pw=q.get('p')||'';
 let name=''; try{name=localStorage.getItem('nagiShareName')||''}catch(e){}
@@ -97,7 +99,8 @@ function newPc(){
   pc.ontrack=e=>{const s=e.streams[0]||new MediaStream([e.track]);if(v.srcObject!==s)v.srcObject=s;
     // 接收缓冲设低：延迟小一点（网不好时浏览器会自己往上加）
     try{if('jitterBufferTarget' in e.receiver)e.receiver.jitterBufferTarget=40;else if('playoutDelayHint' in e.receiver)e.receiver.playoutDelayHint=0.04}catch(_){}
-    v.play().then(()=>{if(v.muted)$('unmute').hidden=false}).catch(()=>{$('unmute').hidden=false})};
+    if(inApp)v.muted=false;
+    v.play().then(()=>{if(v.muted)$('unmute').hidden=false}).catch(()=>{v.muted=true;v.play().catch(()=>{});$('unmute').hidden=false})};
   pc.onconnectionstatechange=()=>{const s=pc.connectionState;
     if(s==='connected'){status('正在看 · 房间 '+room);showPath()}
     else if(s==='failed'){status('连接中断，等房主那边重新连…（一直不行：网络不通，中转也连不上）')}
@@ -111,6 +114,8 @@ async function onOffer(sdp){
   try{const caps=RTCRtpReceiver.getCapabilities('video');if(caps){
     const h=caps.codecs.filter(c=>/h264/i.test(c.mimeType)),o=caps.codecs.filter(c=>!/h264/i.test(c.mimeType));
     for(const t of pc.getTransceivers())if(t.receiver.track&&t.receiver.track.kind==='video'&&t.setCodecPreferences)t.setCodecPreferences(h.concat(o))}}catch(e){}
+  // 声音收发双向：以后开麦直接 replaceTrack，不用重新协商
+  for(const t of pc.getTransceivers())if(t.receiver.track&&t.receiver.track.kind==='audio'){try{t.direction='sendrecv';if(micTrack)await t.sender.replaceTrack(micTrack)}catch(e){}}
   const ans=await pc.createAnswer();
   // 声音：要立体声、高一点的码率（默认只要单声道）
   try{const pt=(ans.sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i)||[])[1];
@@ -144,6 +149,7 @@ setInterval(async()=>{
       const ab=(ain&&prevStat)?Math.round((ain.bytesReceived-prevStat.a)*8/(now-prevStat.t)):0;
       const lost=vin.packetsLost||0,got=vin.packetsReceived||0;
       lines.push('码率   '+kb+' kbps 视频 + '+ab+' kbps 声音');
+      if(ain&&ain.audioLevel!=null)lines.push('音量   '+(ain.audioLevel<0.001?'静音（房主那边没录到声音）':Math.round(ain.audioLevel*100)+'%')+(v.muted?' · 本页静音中':''));
       lines.push('画面   '+(vin.frameWidth||0)+'×'+(vin.frameHeight||0)+' · '+Math.round(vin.framesPerSecond||0)+' 帧');
       lines.push('丢包   '+(got+lost?(lost*100/(got+lost)).toFixed(1):'0')+'%（'+lost+'）· 抖动 '+Math.round((vin.jitter||0)*1000)+' ms');
       const c=vin.codecId&&m[vin.codecId];if(c)lines.push('编码   '+(c.mimeType||'').replace('video/',''));
@@ -159,6 +165,13 @@ setInterval(async()=>{
   }catch(e){$('stats').textContent='统计读不到：'+e}
 },1000);
 
+function audioSender(){if(!pc)return null;for(const t of pc.getTransceivers())if(t.receiver.track&&t.receiver.track.kind==='audio')return t.sender;return null}
+$('mic').onclick=async()=>{
+  if(micTrack){micTrack.stop();micTrack=null;const s=audioSender();if(s)s.replaceTrack(null).catch(()=>{});$('mic').textContent='🎤 关';$('mic').classList.remove('p');return}
+  try{const st2=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    micTrack=st2.getAudioTracks()[0];const s=audioSender();if(s)await s.replaceTrack(micTrack);
+    $('mic').textContent='🎤 开';$('mic').classList.add('p')}
+  catch(e){addDanmaku('打不开麦克风：'+(e.message||e))}};
 $('unmute').onclick=()=>{v.muted=false;v.play().catch(()=>{});$('unmute').hidden=true};
 $('fs').onclick=()=>{const e=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else(e.requestFullscreen||e.webkitRequestFullscreen||function(){}).call(e)};
 $('dmt').onclick=()=>{dmOn=!dmOn;$('dmt').textContent='弹幕：'+(dmOn?'开':'关');if(!dmOn)$('dm').innerHTML=''};

@@ -243,15 +243,21 @@ class SuiteTogetherActivity : Activity() {
 
             section(a, col, "看别人的屏幕")
             val c = card(a)
-            c.addView(text(a, "粘贴对方发来的链接，用浏览器打开"))
-            val link = edit(a, "https://…/share/#r=…", "", uri = true)
+            c.addView(text(a, "粘贴对方发来的口令（例如 v9ru6w，有密码就是「v9ru6w 密码」）或者链接，在 App 里看"))
+            val link = edit(a, "口令或链接", "", uri = true)
             c.addView(link)
-            c.addView(SuitePanels.button(a, "打开") {
-                var u = link.text.toString().trim()
-                Regex("https?://\\S+").find(u)?.let { u = it.value }
-                if (!u.startsWith("http://", true) && !u.startsWith("https://", true)) {
-                    Toast.makeText(a, "没认出链接", Toast.LENGTH_SHORT).show(); return@button
-                }
+            fun target(): String? {
+                val raw = link.text.toString().trim()
+                Regex("https?://\\S+").find(raw)?.let { return it.value }
+                return SuiteRtcShare.linkFromCode(a, raw)
+            }
+            fun bad() = Toast.makeText(a, if (SuiteRtcShare.server(a).isBlank()) "还没有默认服务器：先在上面填一次服务器地址，或者粘贴完整链接" else "没认出口令或链接", Toast.LENGTH_LONG).show()
+            c.addView(SuitePanels.button(a, "在 App 里看", primary = true) {
+                val u = target() ?: run { bad(); return@button }
+                SuiteWatchActivity.open(a, u)
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = a.dp(8f) })
+            c.addView(SuitePanels.button(a, "用浏览器打开") {
+                val u = target() ?: run { bad(); return@button }
                 try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                 catch (e: Throwable) { Toast.makeText(a, "打不开浏览器：${e.message}", Toast.LENGTH_LONG).show() }
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = a.dp(8f) })
@@ -358,15 +364,24 @@ class SuiteTogetherActivity : Activity() {
         statusViews["link"] = link
         c.addView(link)
         c.addView(text(a, "点链接复制", 11.5f))
+        val code = text(a, "", 18f, SuitePanels.TEXT).apply {
+            setPadding(0, a.dp(10f), 0, a.dp(2f))
+            setOnClickListener { SuiteRtcShare.inviteCode()?.let { PageKit.copy(a, it) } }
+        }
+        statusViews["code"] = code
+        c.addView(code)
+        c.addView(text(a, "点口令复制：对方在 Nagisaland「一起看 → 看别人的屏幕」里粘贴口令就能看", 11.5f))
         val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, a.dp(12f), 0, 0) }
         row.addView(SuitePanels.button(a, "停止共享") { SuiteRtcShare.stop(a) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         row.addView(View(a), LinearLayout.LayoutParams(a.dp(10f), 1))
         row.addView(SuitePanels.button(a, "分享链接", primary = true) {
-            SuiteRtcShare.inviteLink()?.let { shareText(a, "来看我的手机屏幕（浏览器打开）：$it") }
+            SuiteRtcShare.inviteLink()?.let { shareText(a, "来看我的手机屏幕\n口令：${SuiteRtcShare.inviteCode()}（Nagisaland → 更多 → 一起看 → 看别人的屏幕）\n或者浏览器打开：$it") }
                 ?: Toast.makeText(a, "还在连接服务器…", Toast.LENGTH_SHORT).show()
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         c.addView(row)
-        c.addView(text(a, "画质（改了马上生效）", 12.5f).apply { setPadding(0, a.dp(14f), 0, 0) })
+        c.addView(text(a, "我的麦克风（和播放的声音一起发出去；戴耳机效果最好）", 12.5f).apply { setPadding(0, a.dp(14f), 0, 0) })
+        c.addView(choices(a, listOf("关", "开"), if (SuiteRtcShare.service?.micOn == true) 1 else 0) { SuiteRtcShare.setMic(it == 1) })
+        c.addView(text(a, "画质（改了马上生效）", 12.5f).apply { setPadding(0, a.dp(10f), 0, 0) })
         addQualityRows(c)
         shareBox.addView(c)
     }
@@ -393,6 +408,7 @@ class SuiteTogetherActivity : Activity() {
         statusViews["codec"]?.text = listOf(st.codec, st.encoder).filter { it.isNotEmpty() }.joinToString(" · ").ifEmpty { "-" }
         statusViews["sig"]?.text = if (s.signalingUp) "已连接" else "断开，自动重连中（画面不受影响）"
         statusViews["link"]?.text = SuiteRtcShare.inviteLink() ?: "等服务器分房间号…"
+        statusViews["code"]?.text = SuiteRtcShare.inviteCode()?.let { "口令：$it" } ?: ""
     }
 
     private fun limitLabel(r: String) = when (r) {

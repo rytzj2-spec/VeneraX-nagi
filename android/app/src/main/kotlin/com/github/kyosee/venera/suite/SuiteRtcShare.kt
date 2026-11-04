@@ -66,6 +66,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -96,7 +97,27 @@ object SuiteRtcShare {
     @Volatile var lastEnd: String? = null
 
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    fun server(ctx: Context) = prefs(ctx).getString("server", DEFAULT_SERVER) ?: DEFAULT_SERVER
+    /** 编译时带进来的默认服务器（android/nagi_local.properties 的 shareServer，不进 Git）；没有就是空 */
+    fun builtInServer(ctx: Context): String {
+        val id = ctx.resources.getIdentifier("nagi_share_server", "string", ctx.packageName)
+        return if (id != 0) ctx.getString(id).trim() else DEFAULT_SERVER
+    }
+    fun server(ctx: Context) = (prefs(ctx).getString("server", "") ?: "").ifBlank { builtInServer(ctx) }
+    /** 口令（房间号 + 密码）→ 观看链接；认不出返回 null */
+    fun linkFromCode(ctx: Context, input: String): String? {
+        val m = Regex("^([a-z0-9]{4,12})(?:[\\s/#:：]+(\\S+))?$", RegexOption.IGNORE_CASE).find(input.trim()) ?: return null
+        val base = server(ctx).ifBlank { return null }.let { if (it.endsWith("/")) it else "$it/" }
+        val pw = m.groupValues[2]
+        return base + "#r=" + m.groupValues[1].lowercase() + if (pw.isNotEmpty()) "&p=" + android.net.Uri.encode(pw) else ""
+    }
+    /** 口令：房间号（有密码就「房间号 密码」） */
+    fun inviteCode(): String? {
+        val sv = service ?: return null
+        val room = sv.room ?: return null
+        return if (sv.password.isNotEmpty()) "$room ${sv.password}" else room
+    }
+    /** 共享中开 / 关手机麦克风（和播放的声音混在一起发出去） */
+    fun setMic(on: Boolean) { service?.micOn = on }
     fun password(ctx: Context) = prefs(ctx).getString("password", "") ?: ""
     fun quality(ctx: Context) = prefs(ctx).getInt("quality2", 0)          // 见 QUALITY_LABELS
     fun prefer(ctx: Context) = prefs(ctx).getInt("prefer", 0)             // 见 PREFER_LABELS
@@ -276,7 +297,10 @@ class SuiteRtcShareService : Service() {
         @Volatile var limitedBy = ""
         @Volatile var rttMs = -1
         @Volatile var path = ""          // 直连 / 经中转（UDP / TCP / TLS）
+        @Volatile var playbackPeak = 0   // 最近录到的播放声音最大幅度（0 = 一直是静音）
     }
+    /** 手机麦克风混进去（共享中可开关） */
+    @Volatile var micOn = false
 
     @Volatile var room: String? = null
     @Volatile var error: String? = null
@@ -451,8 +475,8 @@ class SuiteRtcShareService : Service() {
             .setSampleRate(RATE)
             .setUseStereoInput(true)
             .setUseStereoOutput(true)
-            .setUseHardwareAcousticEchoCanceler(false)
-            .setUseHardwareNoiseSuppressor(false)
+            .setUseHardwareAcousticEchoCanceler(true)    // 只影响真麦克风（开麦时才混进去），播放声音不经过它
+            .setUseHardwareNoiseSuppressor(true)
             .setAudioRecordDataCallback { _, channels, _, buffer -> fillWithPlayback(buffer, channels) }
             .createAudioDeviceModule()
         adm = a
@@ -565,6 +589,10 @@ class SuiteRtcShareService : Service() {
                     val n = try { rec.read(buf, 0, buf.size) } catch (e: Throwable) { -1 }
                     if (n < 0) break
                     if (n == 0) continue
+                    var peak = 0
+                    var j = 0
+                    while (j + 1 < n) { val v = abs(((buf[j].toInt() and 0xff) or (buf[j + 1].toInt() shl 8)).toShort().toInt()); if (v > peak) peak = v; j += 2 }
+                    if (peak > stats.playbackPeak || SystemClock.elapsedRealtime() % 3000 < 20) stats.playbackPeak = peak
                     synchronized(ringLock) {
                         for (i in 0 until n) {
                             ring[ringW] = buf[i]
@@ -601,6 +629,19 @@ class SuiteRtcShareService : Service() {
                     out[i] = (m and 0xff).toByte(); out[i + 1] = (m shr 8).toByte()
                     ringR = (ringR + 4) % ring.size; ringN -= 4; i += 2
                 }
+            }
+        }
+        if (micOn) {
+            // 开麦：把真麦克风录到的（还在 buffer 里）叠加进去
+            val mic = ByteArray(len)
+            buffer.position(pos); buffer.get(mic)
+            var i = 0
+            while (i + 1 < len) {
+                val a = ((out[i].toInt() and 0xff) or (out[i + 1].toInt() shl 8)).toShort().toInt()
+                val b = ((mic[i].toInt() and 0xff) or (mic[i + 1].toInt() shl 8)).toShort().toInt()
+                val v = (a + b).coerceIn(-32768, 32767)
+                out[i] = (v and 0xff).toByte(); out[i + 1] = (v shr 8).toByte()
+                i += 2
             }
         }
         buffer.position(pos)
@@ -817,7 +858,10 @@ class SuiteRtcShareService : Service() {
                 pc.transceivers.firstOrNull { it.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO }?.setCodecPreferences(sorted)
             } catch (e: Throwable) { Log.w(TAG, "codec prefs", e) }
         }
-        audioTrack?.let { pc.addTrack(it, streams) }
+        val at = audioTrack
+        if (at != null) pc.addTrack(at, streams)   // 默认 sendrecv：观看者开麦的声音也能传过来
+        else pc.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO,
+            org.webrtc.RtpTransceiver.RtpTransceiverInit(org.webrtc.RtpTransceiver.RtpTransceiverDirection.RECV_ONLY))
         // 码率：起点不要太低（默认从 300k 慢慢涨，前十几秒很糊）
         pc.setBitrate(quality.min, quality.start, quality.max)
         makeOffer(peer, iceRestart = false)
@@ -904,7 +948,7 @@ class SuiteRtcShareService : Service() {
         if (list.isNotEmpty() && now - lastStatLog > 30_000) {
             lastStatLog = now
             SuiteShareLog.log("统计：${list.size} 人，${stats.bitrateKbps} kbps，${stats.width}x${stats.height}@${"%.0f".format(stats.fps)}，" +
-                "${stats.codec} ${stats.encoder}，受限于 ${stats.limitedBy.ifEmpty { "无" }}，RTT ${stats.rttMs} ms，${stats.path}")
+                "${stats.codec} ${stats.encoder}，播放声音电平 ${stats.playbackPeak}（录声音：${if (audioOn) "开" else "关"}，麦克风：${if (micOn) "开" else "关"}），受限于 ${stats.limitedBy.ifEmpty { "无" }}，RTT ${stats.rttMs} ms，${stats.path}")
         }
         main.postDelayed({ exec.execute { tickStats() } }, 2000)
     }

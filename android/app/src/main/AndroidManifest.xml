@@ -124,6 +124,12 @@
             android:launchMode="singleTop"
             android:theme="@android:style/Theme.Material.NoActionBar"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode" />
+        <!-- 一起看：在 App 里看别人的屏幕共享（WebView 打开观看页） -->
+        <activity
+            android:name=".suite.SuiteWatchActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode" />
         <activity
             android:name=".suite.SuiteTogetherActivity"
             android:exported="false"

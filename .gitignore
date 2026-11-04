@@ -73,3 +73,6 @@ app_chapters_raw.json
 server/nagi_share/nagi_share_secrets.json
 server/nagi_share/deploy_local.json
 __pycache__/
+
+# 本地专用设置（默认服务器等），不进 Git
+/android/nagi_local.properties

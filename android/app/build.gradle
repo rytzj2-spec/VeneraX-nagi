@@ -29,6 +29,11 @@ if (flutterVersionName == null) {
 def nagiProperties = new Properties()
 rootProject.file("nagisaland.properties").withReader("UTF-8") { nagiProperties.load(it) }
 
+// 本地专用设置（不进 Git，仓库是公开的）：android/nagi_local.properties，例如 shareServer=https://你的域名/share/
+def nagiLocal = new Properties()
+def nagiLocalFile = rootProject.file("nagi_local.properties")
+if (nagiLocalFile.exists()) nagiLocalFile.withReader("UTF-8") { nagiLocal.load(it) }
+
 def keystorePropertiesFile = rootProject.file("key.properties")
 def keystoreProperties = new Properties()
 if (!keystorePropertiesFile.exists()) {
@@ -97,6 +102,8 @@ android {
     }
 
     defaultConfig {
+        // 屏幕共享的默认服务器（App 里没填时用它）
+        resValue "string", "nagi_share_server", nagiLocal.getProperty("shareServer", "")
         // Nagisaland 统一应用：包名 com.nagisaland.mobile（覆盖安装原来的 Nagisaland，数据保留）。
         // 代码的命名空间仍是 io.github.kyosee.venera，provider 的 authority 都用 ${applicationId} 自动跟着包名走。
         applicationId = "com.nagisaland.mobile"
