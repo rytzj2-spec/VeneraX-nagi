@@ -44,7 +44,8 @@ class MediaServer {
         username: j['username'] ?? '',
         userId: j['userId'] ?? '',
         token: j['token'] ?? '',
-        deviceId: j['deviceId'] ?? '',
+        // 旧配置可能没存设备编号（空的）：Emby 收到空 DeviceId 会报 400 reportedDeviceId，补一个新的
+        deviceId: (j['deviceId'] is String && (j['deviceId'] as String).isNotEmpty) ? j['deviceId'] : EmbyApi.newDeviceId(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -279,7 +280,7 @@ class EmbyApi {
   static Future<ServerProbe> probe(String base, {ServerKind? kind, String? deviceId}) async {
     if (kind == ServerKind.fnos) return FnosApi.probe(base, deviceId: deviceId);
     if (base.isEmpty) throw EmbyException('请填服务器地址');
-    final dev = deviceId ?? newDeviceId();
+    final dev = (deviceId == null || deviceId.isEmpty) ? newDeviceId() : deviceId;
     final candidates = [base, if (!base.toLowerCase().endsWith('/emby')) '$base/emby'];
     Object? firstError;
     for (final c in candidates) {

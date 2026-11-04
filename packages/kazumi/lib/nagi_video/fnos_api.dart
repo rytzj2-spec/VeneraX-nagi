@@ -99,7 +99,7 @@ class FnosApi {
     }
     final host = Uri.tryParse(base)?.host ?? base;
     return ServerProbe(base: base, kind: ServerKind.fnos, name: '飞牛影视 $host', version: '', product: '飞牛影视',
-        deviceId: deviceId ?? EmbyApi.newDeviceId());
+        deviceId: (deviceId == null || deviceId.isEmpty) ? EmbyApi.newDeviceId() : deviceId);
   }
 
   static Future<MediaServer> login({
