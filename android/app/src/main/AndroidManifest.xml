@@ -117,6 +117,20 @@
                 <data android:mimeType="application/x-zip-compressed" />
             </intent-filter>
         </activity>
+        <!-- 「更多」「一起看」独立页面 -->
+        <activity
+            android:name=".suite.SuiteMoreActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode" />
+        <activity
+            android:name=".suite.SuiteTogetherActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode" />
         <!-- 一起看：屏幕共享（手机自己当服务器，浏览器看） -->
         <activity
             android:name=".suite.SuiteShareActivity"

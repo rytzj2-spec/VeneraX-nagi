@@ -28,10 +28,12 @@ button.p{color:#18181b;background:linear-gradient(90deg,var(--pink),var(--violet
 #gate button{width:100%;margin-top:4px}
 #err{color:#f87171;min-height:1.2em;margin:4px 0 0}
 #unmute{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);padding:14px 20px;font-size:16px}
+#stats{position:fixed;top:56px;right:12px;margin:0;padding:10px 12px;border-radius:12px;background:#000b;color:#e4e4e7;font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;white-space:pre;pointer-events:none}
 </style></head><body>
 <video id="v" playsinline autoplay muted></video>
 <div id="dm"></div>
-<div id="top"><span id="st">连接中…</span><span class="tag" id="path" hidden></span><button id="fs">全屏</button></div>
+<div id="top"><span id="st">连接中…</span><span class="tag" id="path" hidden></span><button id="statsBtn">统计</button><button id="fs">全屏</button></div>
+<pre id="stats" hidden></pre>
 <button class="p" id="unmute" hidden>🔊 点一下打开声音</button>
 <div id="bar"><input id="msg" maxlength="200" placeholder="发弹幕 / 聊天（回车发送）"><button class="p" id="send">发送</button><button id="dmt">弹幕：开</button></div>
 <div id="gate" hidden><div class="card">
@@ -51,6 +53,7 @@ const q=new URLSearchParams(location.hash.slice(1));
 let room=(q.get('r')||'').trim().toLowerCase(), pw=q.get('p')||'';
 let name=''; try{name=localStorage.getItem('nagiShareName')||''}catch(e){}
 let ws=null,pc=null,ice=[],dmOn=true,closed=false,pendingCands=[];
+let peer=null,key=null,retry=0,hostAway=false;   // peer/key：服务器给的身份，牵线断了重连时带上，回到原来的位置
 
 function status(t){st.textContent=t}
 function gate(err){$('gate').hidden=false;$('gRoom').value=room;$('gPw').value=pw;$('gName').value=name;$('err').textContent=err||''}
@@ -61,18 +64,25 @@ $('gGo').onclick=()=>{room=$('gRoom').value.trim().toLowerCase();pw=$('gPw').val
 
 function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
 
+function watching(){return pc&&pc.connectionState==='connected'}
 function connect(){
-  closed=false;status('连接服务器…');
-  ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/share/ws');
-  ws.onopen=()=>send({t:'join',room,pw,name});
-  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}onMsg(m)};
-  ws.onclose=()=>{if(!closed){status('和服务器的连接断了，3 秒后重连…');teardown();setTimeout(connect,3000)}};
+  closed=false;if(!watching())status('连接服务器…');
+  const w=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/share/ws');ws=w;
+  w.onopen=()=>{retry=0;send(peer&&key?{t:'join',room,pw,name,resume:{peer,key}}:{t:'join',room,pw,name})};
+  w.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}onMsg(m)};
+  // 牵线断了只重连，不拆已经在播的画面（WebRTC 不经过牵线服务器）
+  w.onclose=()=>{if(closed||ws!==w)return;const d=[1,2,4,8,15][Math.min(retry++,4)];
+    if(!watching())status('和服务器的连接断了，'+d+' 秒后重连…');setTimeout(connect,d*1000)};
 }
 
 async function onMsg(m){
-  if(m.t==='error'){closed=true;ws.close();gate(m.msg);return}
-  if(m.t==='joined'){ice=m.ice||[];status('已进入房间，等 '+(m.host||'房主')+' 的画面…');newPc();return}
-  if(m.t==='closed'){closed=true;status('房主结束了共享');teardown();return}
+  if(m.t==='error'){closed=true;ws.close();if(peer){status(m.msg);teardown()}else gate(m.msg);return}
+  if(m.t==='joined'){ice=m.ice||[];peer=m.peer;key=m.key;
+    if(!m.resumed||!pc){status(m.hostOnline===false?'房主暂时掉线，等他回来…':'已进入房间，等 '+(m.host||'房主')+' 的画面…');newPc()}
+    return}
+  if(m.t==='host-away'){hostAway=true;if(!watching())status('房主网络不稳，等他回来…');return}
+  if(m.t==='host-back'){hostAway=false;if(!watching())status('房主回来了，等画面…');return}
+  if(m.t==='closed'){closed=true;status('共享结束：'+(m.reason||'房主结束了共享'));teardown();try{ws.close()}catch(e){}return}
   if(m.t==='chat'){addDanmaku((m.host?'👑 ':'')+m.name+'：'+m.text);return}
   if(m.t==='signal'){const d=m.data||{};
     if(d.sdp){await onOffer(d.sdp)}
@@ -85,10 +95,12 @@ function newPc(){
   pc=new RTCPeerConnection({iceServers:ice});
   pc.onicecandidate=e=>{if(e.candidate)send({t:'signal',data:{candidate:e.candidate.toJSON()}})};
   pc.ontrack=e=>{const s=e.streams[0]||new MediaStream([e.track]);if(v.srcObject!==s)v.srcObject=s;
+    // 接收缓冲设低：延迟小一点（网不好时浏览器会自己往上加）
+    try{if('jitterBufferTarget' in e.receiver)e.receiver.jitterBufferTarget=40;else if('playoutDelayHint' in e.receiver)e.receiver.playoutDelayHint=0.04}catch(_){}
     v.play().then(()=>{if(v.muted)$('unmute').hidden=false}).catch(()=>{$('unmute').hidden=false})};
   pc.onconnectionstatechange=()=>{const s=pc.connectionState;
     if(s==='connected'){status('正在看 · 房间 '+room);showPath()}
-    else if(s==='failed'){status('连不上房主（网络不通，服务器也没有可用的中转）')}
+    else if(s==='failed'){status('连接中断，等房主那边重新连…（一直不行：网络不通，中转也连不上）')}
     else if(s==='disconnected'){status('网络不稳，正在恢复…')}};
 }
 
@@ -113,10 +125,39 @@ async function showPath(){
     stats.forEach(r=>{if(r.type==='candidate-pair'&&(r.selected||r.nominated)&&r.state==='succeeded')pair=r;if(r.type==='local-candidate'||r.type==='remote-candidate')cands[r.id]=r});
     if(!pair)return;const l=cands[pair.localCandidateId],r=cands[pair.remoteCandidateId];
     const relay=(l&&l.candidateType==='relay')||(r&&r.candidateType==='relay');
-    path.hidden=false;path.textContent=relay?'经中转':'直连';}catch(e){}
+    const proto=((l&&(l.relayProtocol||l.protocol))||'').toUpperCase();
+    path.hidden=false;path.textContent=(relay?'经中转':'直连')+(proto?' '+proto:'');}catch(e){}
 }
 
 function teardown(){if(pc){try{pc.close()}catch(e){}pc=null}pendingCands=[]}
+
+// ---- 统计（每秒，来自 getStats）
+let statsOn=false,prevStat=null;
+$('statsBtn').onclick=e=>{e.stopPropagation();statsOn=!statsOn;$('stats').hidden=!statsOn};
+setInterval(async()=>{
+  if(!statsOn||!pc)return;
+  try{const r=await pc.getStats(),m={};r.forEach(x=>m[x.id]=x);let vin=null,ain=null,pair=null;
+    r.forEach(x=>{if(x.type==='inbound-rtp'&&x.kind==='video')vin=x;if(x.type==='inbound-rtp'&&x.kind==='audio')ain=x;
+      if(x.type==='candidate-pair'&&x.state==='succeeded'&&(x.nominated||x.selected))pair=x});
+    const now=performance.now(),lines=[];
+    if(vin){const kb=prevStat?Math.round((vin.bytesReceived-prevStat.v)*8/(now-prevStat.t)):0;
+      const ab=(ain&&prevStat)?Math.round((ain.bytesReceived-prevStat.a)*8/(now-prevStat.t)):0;
+      const lost=vin.packetsLost||0,got=vin.packetsReceived||0;
+      lines.push('码率   '+kb+' kbps 视频 + '+ab+' kbps 声音');
+      lines.push('画面   '+(vin.frameWidth||0)+'×'+(vin.frameHeight||0)+' · '+Math.round(vin.framesPerSecond||0)+' 帧');
+      lines.push('丢包   '+(got+lost?(lost*100/(got+lost)).toFixed(1):'0')+'%（'+lost+'）· 抖动 '+Math.round((vin.jitter||0)*1000)+' ms');
+      const c=vin.codecId&&m[vin.codecId];if(c)lines.push('编码   '+(c.mimeType||'').replace('video/',''));
+      if(vin.jitterBufferDelay&&vin.jitterBufferEmittedCount)lines.push('缓冲   '+Math.round(vin.jitterBufferDelay*1000/vin.jitterBufferEmittedCount)+' ms');
+      prevStat={v:vin.bytesReceived,a:ain?ain.bytesReceived:0,t:now}}
+    if(pair){const l=m[pair.localCandidateId],rc=m[pair.remoteCandidateId];
+      const relay=(l&&l.candidateType==='relay')||(rc&&rc.candidateType==='relay');
+      const proto=((l&&(l.relayProtocol||l.protocol))||'').toUpperCase();
+      lines.push('往返   '+(pair.currentRoundTripTime!=null?Math.round(pair.currentRoundTripTime*1000)+' ms':'-'));
+      lines.push('连接   '+(relay?'经中转':'直连')+' '+proto);
+      path.hidden=false;path.textContent=(relay?'经中转':'直连')+(proto?' '+proto:'')}
+    $('stats').textContent=lines.join('\n')||'还没有画面';
+  }catch(e){$('stats').textContent='统计读不到：'+e}
+},1000);
 
 $('unmute').onclick=()=>{v.muted=false;v.play().catch(()=>{});$('unmute').hidden=true};
 $('fs').onclick=()=>{const e=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else(e.requestFullscreen||e.webkitRequestFullscreen||function(){}).call(e)};

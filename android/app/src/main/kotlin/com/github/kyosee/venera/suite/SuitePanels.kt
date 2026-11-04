@@ -144,7 +144,7 @@ object SuitePanels {
     }
 
     /** 一格：图标 + 名字 */
-    private class Cell(ctx: Context, val key: String, val highlighted: Boolean) : View(ctx) {
+    internal class Cell(ctx: Context, val key: String, val highlighted: Boolean) : View(ctx) {
         private val d = resources.displayMetrics.density
         private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
         private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 12.5f * d; textAlign = Paint.Align.CENTER }
@@ -158,46 +158,6 @@ object SuitePanels {
             val itemH = 22 * d + 2 * d + text.textSize * 1.5f
             SuiteNavItems.draw(c, key, width / 2f, (height - itemH) / 2, d, if (highlighted) 0xFFF0ABFC.toInt() else TEXT, stroke, text)
         }
-    }
-
-    // ---------------------------------------------------------------- 更多
-    fun showMore(a: Activity, current: String, onPick: (String) -> Unit) {
-        val root = sheet(a)
-        root.addView(title(a, "更多分区", "点一下打开；长按放到底栏"))
-        val keys = SuiteNavConfig.more(a)
-        val grid = GridLayout(a).apply { columnCount = 4 }
-        lateinit var dialog: Dialog
-        for (k in keys) {
-            val cell = Cell(a, k, k == current)
-            cell.setOnClickListener {
-                dialog.dismiss()
-                if (k != current) onPick(k)
-            }
-            cell.setOnLongClickListener {
-                val err = SuiteNavConfig.moveToBar(a, k)
-                Toast.makeText(a, err ?: "「${SuiteNavItems.label(k)}」已放到底栏", Toast.LENGTH_SHORT).show()
-                if (err == null) dialog.dismiss()
-                true
-            }
-            grid.addView(cell, GridLayout.LayoutParams(GridLayout.spec(GridLayout.UNDEFINED), GridLayout.spec(GridLayout.UNDEFINED, 1f)).apply { width = 0 })
-        }
-        if (keys.isEmpty()) {
-            root.addView(TextView(a).apply { text = "所有分区都在底栏上了"; setTextColor(SUB); setPadding(0, a.dp(8f), 0, a.dp(8f)) })
-        }
-        root.addView(grid)
-        val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, a.dp(14f), 0, 0) }
-        row.addView(button(a, "编辑底栏") { dialog.dismiss(); showEditor(a) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(View(a), LinearLayout.LayoutParams(a.dp(10f), 1))
-        row.addView(button(a, "流畅度设置") { dialog.dismiss(); showSettings(a) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        root.addView(row)
-        // 一键配置（导出 / 导入，SuiteConfigUi）、一起看（屏幕共享 / 同步播放，SuiteTogetherUi）
-        val row2 = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, a.dp(10f), 0, 0) }
-        row2.addView(button(a, "一键配置") { dialog.dismiss(); SuiteConfigUi.showMenu(a) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        row2.addView(View(a), LinearLayout.LayoutParams(a.dp(10f), 1))
-        row2.addView(button(a, "一起看") { dialog.dismiss(); SuiteTogetherUi.showMenu(a) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        root.addView(row2)
-        dialog = bottomDialog(a, root)
-        dialog.show()
     }
 
     // ---------------------------------------------------------------- 编辑底栏

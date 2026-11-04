@@ -238,9 +238,8 @@ class Bridge(private val activity: MainActivity) {
     @JavascriptInterface
     fun openMore(current: String?) {
         activity.runOnUiThread {
-            io.github.kyosee.venera.suite.SuitePanels.showMore(activity, current ?: "lib") { k ->
-                io.github.kyosee.venera.suite.SuiteNav.go(activity, k)
-            }
+            // 「更多」是独立页面
+            activity.startActivity(android.content.Intent(activity, io.github.kyosee.venera.suite.SuiteMoreActivity::class.java))
         }
     }
 

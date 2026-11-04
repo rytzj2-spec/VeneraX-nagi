@@ -94,7 +94,8 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
 | v0.20.0 / 55 | e27a503 | 一键配置（导出 / 导入 / 分区开关 / 首次必须导入） | CI（随 d2c0d05）；**没上真机** |
 | v0.20.1 / 56 | 52de86c | 返回手势：左边缘打开设置、分区首页返回行为、去掉番剧「再按一次退出」 | CI（随 d2c0d05）；**没上真机** |
 | v0.21.0 / 57 | d2c0d05 | 配置链接自动更新、局域网屏幕共享（MJPEG）、影视 / H 一起看（SyncPlay） | CI 通过；**没上真机** |
-| v0.22.0 / 58 | d6e3dab 起 | 屏幕共享经服务器（WebRTC）+ 服务器牵线服务；飞牛影视 | 见下面 v0.22.0 一节 |
+| v0.22.0 / 58 | d6e3dab、2570f6e、fc32e76 | 屏幕共享经服务器（WebRTC）+ 服务器牵线服务；飞牛影视 | 真机：经服务器能看（经中转），**码率低 / 卡 / 延迟高；点全屏共享就结束**（v0.23.0 修）；服务器已部署（TURN=cloudflare） |
+| v0.23.0 / 59 | 见下面 | 共享稳定性（录屏 resize、牵线重连、ICE restart、结束原因、share.txt）、画质（起始码率、自动档、统计）、「更多」「一起看」独立页面 | 见下面 v0.23.0 一节 |
 
 ## 2026-11-03 统一成一个应用（unify-app 分支）
 以前：CI 编 suite APK（漫画 + 番剧 + H）→ 电脑上 merge_venerax.py 反编译，拼进 Nagisaland 主界面的 smali → 签名。
@@ -278,6 +279,32 @@ suite 分支的构建还推到 `apk-suite` 分支。临时密钥签名，正式�
 - 状态：CI 编译（见 Actions）；服务器端在云端容器里本机测试过：牵线全流程（开房间 / 密码 / offer-answer / 聊天 / 房主离开），
   以及 Nginx（同一段配置）+ 观看页 + 一个用画布模拟手机的房主，在无头 Chromium 里端到端看到画面、显示「直连」、弹幕双向。
   **没上真机，没部署到线上服务器，飞牛没有真机器测过。**
+
+## 2026-11-04 v0.23.0（versionCode 59）：共享稳定性、画质、「更多」「一起看」页面
+- 真机（v0.22.0，跨网络、经中转）：码率低、糊、卡、延迟高；点了一下「全屏」共享就结束。
+- **点全屏就结束的原因**：转屏后调了库自带 `ScreenCapturerAndroid.changeCaptureFormat`，它会 `VirtualDisplay.release()` 再
+  `createVirtualDisplay()`；Android 14 一次录屏授权只许建一个 VirtualDisplay，第二次被拒 → 录屏权限被收回 → 共享结束。
+  改用自己的 `NagiScreenCapturer`（`SuiteRtcShare.kt`）：一次授权只建一个 VirtualDisplay，改尺寸用 `resize()` + `SurfaceTextureHelper.setTextureSize()`。
+- 牵线：服务器（`nagi_share.py`）开房间 / 进房间时发重连钥匙（房主 `key`、观看者 `peer + key`）；掉线保留 `GRACE`（60 秒，config 可改），
+  重连带钥匙回到原位（房主拿到当前观看者名单，补建断开期间进来的人的连接）；房主掉线时观看者收到 `host-away` / `host-back`；
+  `bye` 带原因关房间（观看页显示「共享结束：原因」）；超时关房间也带原因。手机端 OkHttp 退避重连（1/2/4/8/15/30 秒），断开期间要发的消息排队；
+  一次都没连上过（地址错）试 4 次就结束并说原因。手机和观看页每 25 秒 `ping`。
+- WebRTC：ICE 断开 5 秒 / 失败 → `restartIce()` + 带 IceRestart 的新 offer（最多 3 次）。只在：用户停止、`MediaProjection.Callback.onStop`（系统收回）、
+  启动失败时结束（`end(reason)` 唯一出口），原因记 `SuiteRtcShare.lastEnd`（「一起看」页显示）。事件写 `内部存储/Nagisaland/debug/share.txt`。
+- 画质：`pc.setBitrate(最低, 起始, 最高)`（不再从 300k 慢慢涨）；清晰度 自动（起 2.5M，最高 8M，录屏 1280）/ 清晰（4M / 6M，1920）/ 标准（2.5M / 3.5M）/ 省流（1.2M / 1.5M，960）；
+  「网不好时」流畅优先（`MAINTAIN_FRAMERATE`，默认）/ 清晰优先 / 平衡；录屏尺寸取 16 的倍数（硬件编码器）。开始时把编码器支持的格式写进 share.txt，
+  统计里有实际编码（H264 / VP8）和编码器实现名（看硬件编码有没有生效；没有 H.264 时自然用 VP8）。
+  中转：服务器 `turn: both` 时两个都给，手机「中转」选 自动 / Cloudflare / 自建（房间里的观看者跟房主一样）；部署 `--turn both`。
+- 观看页：牵线断了只重连不拆画面；接收端 `jitterBufferTarget = 40ms`（老浏览器 `playoutDelayHint`）；右上角「统计」每秒：视频 / 声音码率、
+  分辨率帧率、丢包、抖动、编码、缓冲、往返、直连 / 经中转 + UDP / TCP / TLS。
+- 「更多」改成独立页面 `SuiteMoreActivity`（`SuitePages.kt`）：功能（一起看〔显示共享状态〕、一键配置）→ 其他分区格子（点开、长按放底栏）→ 设置（编辑底栏、流畅度设置，这一轮还是弹窗）；
+  底部分区栏（「更多」亮），从这里切走后自己关掉。底栏「更多」、主界面网页「更多」都开这个页面（`SuitePanels.showMore` 删了）。
+- 「一起看」独立页面 `SuiteTogetherActivity`：没在共享 = 服务器地址 / 密码 / 清晰度 / 网不好时 / 中转 + 「经服务器共享」「局域网直连」；
+  共享中 = 状态卡片（房间、在看人数、连接类型、码率〔受限原因〕、画面、编码、牵线状态、链接点一下复制，每秒刷新）+ 分享 / 停止；看别人的屏幕；同步播放说明。
+  `SuiteShareActivity` 只剩「要权限 → 启动服务」；两种共享的通知都打开这个页面。`SuiteTogetherUi.kt` 删了。
+- 状态：服务器在容器里测过（续连 / 保留 / bye 原因 / 超时 / both）；观看页 + Nginx + 画布房主在无头 Chromium 里端到端测过
+  （统计有数据、H264、观看者牵线断开自动重连画面不断、房主断开重连画面不断、弹幕、结束原因）。**手机端没上真机。**
+- 服务器端有改动（`nagi_share.py`、`web/index.html`、`deploy_nagi_share.py`）：要重新跑部署。
 
 ## 本地编译（不用 CI）
 在 VeneraX-nagi（或 NagiBuild）目录：`flutter pub get`，然后

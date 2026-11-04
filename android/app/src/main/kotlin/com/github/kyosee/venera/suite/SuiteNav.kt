@@ -73,6 +73,7 @@ object SuiteNav {
         VideoActivity::class.java -> "video"
         hClass -> "h"
         SuiteSwitchActivity::class.java -> "nagi"
+        SuiteMoreActivity::class.java -> "more"
         else -> if (a.javaClass.name == NAGI_MAIN) "nagi" else null
     }
 
@@ -255,13 +256,13 @@ object SuiteNav {
 
     /** 在漫画/番剧/影视/H 界面加常驻分区栏（在 onPostCreate 里调用） */
     @JvmStatic
-    fun attach(a: Activity, current: String) {
+    fun attach(a: Activity, current: String, onPicked: (() -> Unit)? = null) {
         if (!enabled()) return
         install(a.application)
         val content = a.findViewById<FrameLayout>(android.R.id.content) ?: return
         if (content.findViewWithTag<View>(SuiteNavBar.TAG) != null) return
         val child = content.getChildAt(0) ?: return
-        val bar = SuiteNavBar(a, current) { go(a, it) }
+        val bar = SuiteNavBar(a, current) { go(a, it); onPicked?.invoke() }
         bar.tag = SuiteNavBar.TAG
         content.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
 
@@ -483,7 +484,8 @@ class SuiteNavBar(ctx: Context, private val current: String, private val onPick:
                 if (!longPressed && !swiped && idx >= 0 && idx == downIdx) {
                     performClick()
                     val k = keys[idx]
-                    if (k == "more") (context as? Activity)?.let { SuitePanels.showMore(it, current, onPick) }
+                    // 「更多」是独立页面（SuiteMoreActivity）
+                    if (k == "more") (context as? Activity)?.let { if (current != "more") it.startActivity(Intent(it, SuiteMoreActivity::class.java)) }
                     else if (k != current) onPick(k)
                 }
                 downIdx = -1

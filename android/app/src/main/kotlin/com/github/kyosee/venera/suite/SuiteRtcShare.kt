@@ -2,6 +2,7 @@ package io.github.kyosee.venera.suite
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -11,17 +12,22 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.Surface
 import android.view.WindowManager
 import android.widget.Toast
 import okhttp3.OkHttpClient
@@ -33,6 +39,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
+import org.webrtc.CapturerObserver
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.EglBase
@@ -42,16 +49,21 @@ import org.webrtc.MediaStream
 import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.RTCStatsReport
 import org.webrtc.RtpParameters
-import org.webrtc.RtpTransceiver
-import org.webrtc.ScreenCapturerAndroid
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
+import org.webrtc.VideoCapturer
+import org.webrtc.VideoFrame
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import org.webrtc.audio.JavaAudioDeviceModule
+import java.io.File
 import java.nio.ByteBuffer
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
@@ -59,12 +71,19 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * 屏幕共享「经服务器」：WebRTC。手机是房主，服务器（小站那台，/share/ws，见 server/nagi_share/）只牵线：
- * 能直连就手机 ↔ 观看者直连（不花服务器流量）；连不上走 TURN（Cloudflare 或自建 coturn，服务器下发临时凭据）。
- * 视频：屏幕 → 硬件 H.264（观看页把 H.264 排第一）；声音：Android 10+ 录「手机正在播放的声音」。
+ * 屏幕共享「经服务器」：WebRTC。手机是房主，服务器（server/nagi_share/，/share/ws）只牵线：
+ * 能直连就手机 ↔ 观看者直连；连不上走 TURN（Cloudflare / 自建 coturn，服务器下发临时凭据）。
  *
- * WebRTC 的声音只能从「录音」来（JavaAudioDeviceModule 开麦克风），所以麦克风会打开（系统会显示麦克风绿点），
- * 但录到的每一段都在 AudioRecordDataCallback 里整段换成播放声音（没有就静音），麦克风的声音不会发出去。
+ * 稳定性（v0.23.0）：
+ * - 录屏用自己的 [NagiScreenCapturer]：整个共享只建一次 VirtualDisplay，转屏 / 分辨率变了用 resize()。
+ *   （库自带的 ScreenCapturerAndroid.changeCaptureFormat 会释放后重建 VirtualDisplay，Android 14 不允许
+ *   一次授权建第二个，录屏权限被收回 → v0.22.0「点全屏共享就结束」就是这个）
+ * - 牵线断了自动重连（带房主钥匙回到原房间，服务器保留 60 秒），已经建好的 WebRTC 连接不动；断开期间要发的消息排队。
+ * - ICE 断开 5 秒 / 失败 → ICE restart（房主重新发 offer），连续 3 次不行才记失败。
+ * - 只在用户停止、系统收回录屏权限、启动失败时结束；结束原因发给观看者，写进 内部存储/Nagisaland/debug/share.txt。
+ *
+ * 声音：WebRTC 只能从「录音」来，JavaAudioDeviceModule 会开麦克风（系统显示麦克风绿点），
+ * 但每 10ms 录到的一段都整段换成 AudioPlaybackCapture 录到的播放声音（没有就静音），麦克风的声音不发出去。
  */
 object SuiteRtcShare {
     /** 不写死（仓库是公开的）：第一次自己填，之后记住；「一键配置」导出时带上（见 SuiteConfigPack 的 shareServer） */
@@ -73,16 +92,32 @@ object SuiteRtcShare {
 
     @Volatile internal var service: SuiteRtcShareService? = null
     val running: Boolean get() = service != null
+    /** 上次共享（经服务器）是因为什么结束的（「一起看」页面上显示） */
+    @Volatile var lastEnd: String? = null
 
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     fun server(ctx: Context) = prefs(ctx).getString("server", DEFAULT_SERVER) ?: DEFAULT_SERVER
     fun password(ctx: Context) = prefs(ctx).getString("password", "") ?: ""
-    fun quality(ctx: Context) = prefs(ctx).getInt("quality", 1)          // 0 清晰 / 1 标准 / 2 省流
+    fun quality(ctx: Context) = prefs(ctx).getInt("quality2", 0)          // 见 QUALITY_LABELS
+    fun prefer(ctx: Context) = prefs(ctx).getInt("prefer", 0)             // 见 PREFER_LABELS
+    fun turn(ctx: Context) = prefs(ctx).getString("turn", "auto") ?: "auto"
     fun save(ctx: Context, server: String, password: String, quality: Int) =
-        prefs(ctx).edit().putString("server", server).putString("password", password).putInt("quality", quality).apply()
+        prefs(ctx).edit().putString("server", server).putString("password", password).putInt("quality2", quality).apply()
+    fun savePrefer(ctx: Context, v: Int) = prefs(ctx).edit().putInt("prefer", v).apply()
+    fun saveTurn(ctx: Context, v: String) = prefs(ctx).edit().putString("turn", v).apply()
 
-    val QUALITY_LABELS = listOf("清晰（约 3 Mbps）", "标准（约 2 Mbps）", "省流（约 1 Mbps）")
-    fun bitrate(q: Int) = when (q) { 0 -> 3_000_000; 2 -> 1_000_000; else -> 2_000_000 }
+    val QUALITY_LABELS = listOf("自动", "清晰", "标准", "省流")
+    val PREFER_LABELS = listOf("流畅优先", "清晰优先", "平衡")
+    val TURN_LABELS = linkedMapOf("auto" to "自动", "cloudflare" to "Cloudflare", "coturn" to "自建")
+
+    /** 清晰度 → (起始, 最低, 最高) 码率 bps 和录屏最长边 */
+    class Quality(val start: Int, val min: Int, val max: Int, val maxSide: Int)
+    fun qualityOf(q: Int) = when (q) {
+        1 -> Quality(4_000_000, 800_000, 6_000_000, 1920)
+        2 -> Quality(2_500_000, 500_000, 3_500_000, 1280)
+        3 -> Quality(1_200_000, 300_000, 1_500_000, 960)
+        else -> Quality(2_500_000, 300_000, 8_000_000, 1280)   // 自动：起点不低，网好就往上走
+    }
 
     /** 观看链接：服务器地址 + #r=房间号（有密码就带上） */
     fun inviteLink(): String? {
@@ -97,30 +132,144 @@ object SuiteRtcShare {
     }
 }
 
+/** 共享事件日志：内部存储/Nagisaland/debug/share.txt（测完发给开发者看） */
+object SuiteShareLog {
+    private val io = Executors.newSingleThreadExecutor()
+    private val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    fun log(line: String) {
+        val text = "${fmt.format(Date())}  $line\n"
+        Log.i("nagi-share", line)
+        io.execute {
+            try {
+                val dir = File(Environment.getExternalStorageDirectory(), "Nagisaland/debug").apply { mkdirs() }
+                val f = File(dir, "share.txt")
+                if (f.length() > 1024 * 1024) f.renameTo(File(dir, "share.old.txt"))
+                f.appendText(text)
+            } catch (_: Throwable) {}
+        }
+    }
+}
+
+/**
+ * 录屏 → WebRTC。和 ScreenCapturerAndroid 一样用 SurfaceTextureHelper 接 VirtualDisplay 的画面，
+ * 区别：一次授权只建一个 VirtualDisplay，改尺寸用 resize()（Android 14 不许重建）。
+ */
+class NagiScreenCapturer(
+    private val permission: Intent,
+    private val onProjectionStopped: () -> Unit,
+) : VideoCapturer {
+    private var helper: SurfaceTextureHelper? = null
+    private var ctx: Context? = null
+    private var observer: CapturerObserver? = null
+    @Volatile var projection: MediaProjection? = null; private set
+    private var display: VirtualDisplay? = null
+    private var width = 0
+    private var height = 0
+    private var dpi = 160
+    @Volatile private var stopped = false
+
+    override fun initialize(helper: SurfaceTextureHelper, ctx: Context, observer: CapturerObserver) {
+        this.helper = helper
+        this.ctx = ctx
+        this.observer = observer
+        val dm = ctx.resources.displayMetrics
+        dpi = dm.densityDpi
+    }
+
+    override fun startCapture(width: Int, height: Int, fps: Int) {
+        val c = ctx ?: return
+        val h = helper ?: return
+        this.width = width
+        this.height = height
+        val mpm = c.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        val p = mpm.getMediaProjection(Activity.RESULT_OK, permission) ?: throw IllegalStateException("录屏授权失败")
+        projection = p
+        // Android 14：先注册回调再建 VirtualDisplay
+        p.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() {
+                if (!stopped) onProjectionStopped()
+            }
+        }, h.handler)
+        h.setTextureSize(width, height)
+        display = p.createVirtualDisplay("nagisaland-share", width, height, dpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, Surface(h.surfaceTexture), null, h.handler)
+        observer?.onCapturerStarted(true)
+        h.startListening { frame: VideoFrame -> observer?.onFrameCaptured(frame) }
+    }
+
+    /** 转屏 / 换清晰度：只改尺寸，不重建 */
+    override fun changeCaptureFormat(width: Int, height: Int, fps: Int) {
+        val h = helper ?: return
+        h.handler.post {
+            if (stopped) return@post
+            this.width = width
+            this.height = height
+            try {
+                h.setTextureSize(width, height)
+                display?.resize(width, height, dpi)
+            } catch (e: Throwable) {
+                SuiteShareLog.log("改录屏尺寸失败：${e.message}")
+            }
+        }
+    }
+
+    override fun stopCapture() {
+        stopped = true
+        val h = helper ?: return
+        val done = java.util.concurrent.CountDownLatch(1)
+        h.handler.post {
+            try { h.stopListening() } catch (_: Throwable) {}
+            try { display?.release() } catch (_: Throwable) {}
+            display = null
+            try { projection?.stop() } catch (_: Throwable) {}
+            observer?.onCapturerStopped()
+            done.countDown()
+        }
+        done.await(2, TimeUnit.SECONDS)
+    }
+
+    override fun dispose() { stopped = true }
+    override fun isScreencast() = true
+}
+
 class SuiteRtcShareService : Service() {
     companion object {
         const val ACTION_STOP = "nagisaland.rtcshare.STOP"
         private const val TAG = "nagi-rtc"
         private const val NOTIFY_ID = 0x5352
-        private const val MAX_SIDE = 1280
         private const val FPS = 30
         private const val RATE = 48000
+        private val BACKOFF = longArrayOf(1, 2, 4, 8, 15, 30)
         @Volatile private var factoryInitialized = false
     }
 
-    // 给界面看的状态
+    /** 给「一起看」页面看的状态 */
+    class Stats {
+        @Volatile var bitrateKbps = 0
+        @Volatile var fps = 0.0
+        @Volatile var width = 0
+        @Volatile var height = 0
+        @Volatile var codec = ""
+        @Volatile var encoder = ""
+        @Volatile var limitedBy = ""
+        @Volatile var rttMs = -1
+        @Volatile var path = ""          // 直连 / 经中转（UDP / TCP / TLS）
+    }
+
     @Volatile var room: String? = null
     @Volatile var error: String? = null
-    @Volatile var serverBase: String = SuiteRtcShare.DEFAULT_SERVER
+    @Volatile var signalingUp = false
+    @Volatile var serverBase: String = ""
     @Volatile var password: String = ""
     @Volatile var audioOn = false
+    val stats = Stats()
     val viewers: Int get() = peers.size
 
     private val exec = Executors.newSingleThreadExecutor()    // 所有状态都在这一个线程上改
     private val main = Handler(Looper.getMainLooper())
     private var egl: EglBase? = null
     private var factory: PeerConnectionFactory? = null
-    private var capturer: ScreenCapturerAndroid? = null
+    private var capturer: NagiScreenCapturer? = null
     private var textureHelper: SurfaceTextureHelper? = null
     private var videoSource: VideoSource? = null
     private var videoTrack: VideoTrack? = null
@@ -128,15 +277,32 @@ class SuiteRtcShareService : Service() {
     private var audioTrack: AudioTrack? = null
     private var adm: JavaAudioDeviceModule? = null
     private var playback: AudioRecord? = null
-    private var ws: WebSocket? = null
     private var http: OkHttpClient? = null
+    private var ws: WebSocket? = null
+    private var wsGen = 0                       // 每次重连 +1，旧连接的回调不理
+    private var hostKey: String? = null
+    private var reconnectTry = 0
+    private val outbox = ArrayList<JSONObject>()
     private var ice: List<PeerConnection.IceServer> = emptyList()
-    private val peers = HashMap<String, PeerConnection>()
-    private var bitrate = 2_000_000
+    private var turnPref = "auto"
+
+    private class Peer(val id: String, val name: String, val pc: PeerConnection) {
+        var restarts = 0
+        var lastBytes = 0.0
+        var lastAt = 0L
+        var disconnectedAt = 0L
+        var connected = false
+        var kbps = 0.0
+    }
+    private val peers = HashMap<String, Peer>()
+
+    private var quality = SuiteRtcShare.qualityOf(0)
+    private var prefer = 0
     @Volatile private var stopped = false
     private var displayListener: DisplayManager.DisplayListener? = null
     private var capW = 0
     private var capH = 0
+    private var lastStatLog = 0L
 
     // 播放声音的环形缓冲（AudioPlaybackCapture 写，ADM 的录音回调读）
     private val ring = ByteArray(RATE * 2 * 2)          // 1 秒
@@ -148,7 +314,7 @@ class SuiteRtcShareService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_STOP) { end("你停止了共享"); return START_NOT_STICKY }
         if (intent == null || factory != null) return START_NOT_STICKY
         val mic = Build.VERSION.SDK_INT >= 29 &&
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -156,27 +322,38 @@ class SuiteRtcShareService : Service() {
         @Suppress("DEPRECATION")
         val data = intent.getParcelableExtra<Intent>("data")
         if (data == null) { stopSelf(); return START_NOT_STICKY }
-        serverBase = intent.getStringExtra("server") ?: SuiteRtcShare.DEFAULT_SERVER
+        serverBase = intent.getStringExtra("server").orEmpty()
         password = intent.getStringExtra("password").orEmpty()
-        bitrate = SuiteRtcShare.bitrate(intent.getIntExtra("quality", 1))
+        quality = SuiteRtcShare.qualityOf(intent.getIntExtra("quality", 0))
+        prefer = SuiteRtcShare.prefer(this)
+        turnPref = SuiteRtcShare.turn(this)
         SuiteRtcShare.service = this
+        SuiteShareLog.log("==== 开始共享（经服务器 $serverBase，清晰度 ${SuiteRtcShare.QUALITY_LABELS.getOrNull(intent.getIntExtra("quality", 0))}，" +
+            "${SuiteRtcShare.PREFER_LABELS.getOrNull(prefer)}，中转 $turnPref，录音 $mic，Android ${Build.VERSION.SDK_INT} ${Build.MODEL}）")
         exec.execute {
             try {
                 startMedia(data, mic)
                 connectSignaling()
             } catch (e: Throwable) {
-                fail("启动失败：${e.message ?: e.javaClass.simpleName}", e)
+                SuitePerf.error(this, "屏幕共享（经服务器）启动失败", e)
+                end("启动失败：${e.message ?: e.javaClass.simpleName}")
             }
         }
+        exec.execute { tickStats() }
         return START_NOT_STICKY
     }
 
-    private fun fail(msg: String, e: Throwable? = null) {
-        Log.w(TAG, msg, e)
-        error = msg
-        if (e != null) SuitePerf.error(this, "屏幕共享（经服务器）：$msg", e)
+    /** 结束共享（唯一出口）：告诉观看者原因、写日志、停服务 */
+    private fun end(reason: String) {
+        if (stopped) return
+        SuiteShareLog.log("结束：$reason")
+        error = reason
+        SuiteRtcShare.lastEnd = if (reason == "你停止了共享") null else reason
+        try {
+            ws?.send(JSONObject().put("t", "bye").put("reason", reason).toString())
+        } catch (_: Throwable) {}
         main.post {
-            Toast.makeText(this, "屏幕共享：$msg", Toast.LENGTH_LONG).show()
+            if (reason != "你停止了共享") Toast.makeText(this, "屏幕共享结束：$reason", Toast.LENGTH_LONG).show()
             stopSelf()
         }
     }
@@ -194,7 +371,7 @@ class SuiteRtcShareService : Service() {
         }
         val stop = PendingIntent.getService(this, 3, Intent(this, SuiteRtcShareService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val open = PendingIntent.getActivity(this, 4, Intent(this, SuiteShareActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        val open = PendingIntent.getActivity(this, 4, Intent(this, SuiteTogetherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         @Suppress("DEPRECATION")
         return b.setSmallIcon(applicationInfo.icon)
@@ -218,7 +395,11 @@ class SuiteRtcShareService : Service() {
 
     private fun updateNotification() = main.post {
         if (stopped) return@post
-        val text = if (room == null) "连接服务器…" else "房间 $room · ${peers.size} 人在看 · 点这里看链接"
+        val text = when {
+            room == null -> "连接服务器…"
+            !signalingUp -> "房间 $room · 和服务器断开，重连中（画面不受影响）"
+            else -> "房间 $room · ${peers.size} 人在看 · 点这里看链接"
+        }
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFY_ID, notification(text))
     }
 
@@ -229,9 +410,9 @@ class SuiteRtcShareService : Service() {
         val dm = DisplayMetrics()
         @Suppress("DEPRECATION")
         wm.defaultDisplay.getRealMetrics(dm)
-        val scale = min(1f, MAX_SIDE.toFloat() / max(dm.widthPixels, dm.heightPixels))
-        // 编码器要求偶数（很多硬件编码器要 16 对齐，WebRTC 会自己裁）
-        return ((dm.widthPixels * scale).roundToInt() / 2 * 2) to ((dm.heightPixels * scale).roundToInt() / 2 * 2)
+        val scale = min(1f, quality.maxSide.toFloat() / max(dm.widthPixels, dm.heightPixels))
+        // 硬件编码器喜欢 16 的倍数
+        return ((dm.widthPixels * scale).roundToInt() / 16 * 16) to ((dm.heightPixels * scale).roundToInt() / 16 * 16)
     }
 
     private fun startMedia(data: Intent, mic: Boolean) {
@@ -241,26 +422,26 @@ class SuiteRtcShareService : Service() {
         }
         val e = EglBase.create()
         egl = e
-        val admBuilder = JavaAudioDeviceModule.builder(applicationContext)
+        val a = JavaAudioDeviceModule.builder(applicationContext)
             .setSampleRate(RATE)
             .setUseStereoInput(true)
             .setUseStereoOutput(true)
             .setUseHardwareAcousticEchoCanceler(false)
             .setUseHardwareNoiseSuppressor(false)
             .setAudioRecordDataCallback { _, channels, _, buffer -> fillWithPlayback(buffer, channels) }
-        val a = admBuilder.createAudioDeviceModule()
+            .createAudioDeviceModule()
         adm = a
+        val enc = DefaultVideoEncoderFactory(e.eglBaseContext, true, true)
+        SuiteShareLog.log("可用的视频编码：" + enc.supportedCodecs.joinToString { it.name })
         val f = PeerConnectionFactory.builder()
             .setAudioDeviceModule(a)
-            .setVideoEncoderFactory(DefaultVideoEncoderFactory(e.eglBaseContext, true, true))
+            .setVideoEncoderFactory(enc)
             .setVideoDecoderFactory(DefaultVideoDecoderFactory(e.eglBaseContext))
             .createPeerConnectionFactory()
         factory = f
 
         // 画面
-        val cap = ScreenCapturerAndroid(data, object : MediaProjection.Callback() {
-            override fun onStop() { main.post { stopSelf() } }
-        })
+        val cap = NagiScreenCapturer(data) { end("系统收回了录屏权限") }
         capturer = cap
         val helper = SurfaceTextureHelper.create("nagi-rtc-capture", e.eglBaseContext)
         textureHelper = helper
@@ -270,13 +451,13 @@ class SuiteRtcShareService : Service() {
         val (w, h) = captureSize()
         capW = w; capH = h
         cap.startCapture(w, h, FPS)
+        SuiteShareLog.log("录屏 ${w}x$h")
         videoTrack = f.createVideoTrack("nagi-video", vs)
         watchRotation()
 
         // 声音：播放声音录下来放进环形缓冲；WebRTC 的录音回调从这里取
         if (mic) {
-            val proj = cap.mediaProjection
-            if (proj != null) startPlaybackCapture(proj)
+            cap.projection?.let { startPlaybackCapture(it) }
             val c = MediaConstraints()
             for (k in listOf("googEchoCancellation", "googAutoGainControl", "googNoiseSuppression", "googHighpassFilter")) {
                 c.mandatory.add(MediaConstraints.KeyValuePair(k, "false"))
@@ -287,7 +468,7 @@ class SuiteRtcShareService : Service() {
         }
     }
 
-    /** 横竖屏切换：按新方向改采集大小 */
+    /** 横竖屏切换：按新方向改采集大小（resize，不重建） */
     private fun watchRotation() {
         val dmgr = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         val l = object : DisplayManager.DisplayListener {
@@ -300,7 +481,8 @@ class SuiteRtcShareService : Service() {
                     val (w, h) = captureSize()
                     if (w == capW && h == capH) return@execute
                     capW = w; capH = h
-                    try { capturer?.changeCaptureFormat(w, h, FPS) } catch (e: Throwable) { Log.w(TAG, "resize", e) }
+                    SuiteShareLog.log("屏幕方向 / 尺寸变了 → 录屏改成 ${w}x$h")
+                    capturer?.changeCaptureFormat(w, h, FPS)
                 }
             }
         }
@@ -341,7 +523,7 @@ class SuiteRtcShareService : Service() {
                 }
             }, "nagi-rtc-playback").start()
         } catch (e: Throwable) {
-            Log.w(TAG, "playback capture", e)
+            SuiteShareLog.log("录播放声音失败：${e.message}")
             audioOn = false
         }
     }
@@ -356,10 +538,9 @@ class SuiteRtcShareService : Service() {
                 val take = min(len, ringN)
                 for (i in 0 until take) { out[i] = ring[ringR]; ringR = (ringR + 1) % ring.size }
                 ringN -= take
-                // 攒得太多（延迟变大）：丢掉一部分，保持在 0.2 秒以内
+                // 攒得太多（延迟变大）：丢掉一部分，保持在 0.1 秒左右
                 if (ringN > RATE * 4 / 5) { val drop = ringN - RATE * 2 * 2 / 10; ringR = (ringR + drop) % ring.size; ringN -= drop }
             } else {
-                // 单声道：左右取平均
                 var i = 0
                 while (i + 1 < len && ringN >= 4) {
                     val l = (ring[ringR].toInt() and 0xff) or (ring[(ringR + 1) % ring.size].toInt() shl 8)
@@ -375,7 +556,7 @@ class SuiteRtcShareService : Service() {
         buffer.position(pos)
     }
 
-    // ---------------------------------------------------------------- 牵线
+    // ---------------------------------------------------------------- 牵线（自动重连）
 
     private fun wsUrl(base: String): String {
         var b = base.trim()
@@ -387,56 +568,121 @@ class SuiteRtcShareService : Service() {
         } + "ws"
     }
 
-    private fun send(o: JSONObject) { ws?.send(o.toString()) }
+    /** 发给服务器；牵线断着的话先排队（offer / 候选都要送到） */
+    private fun send(o: JSONObject) {
+        val w = ws
+        if (!signalingUp || w == null || !w.send(o.toString())) {
+            if (o.optString("t") != "ping") {
+                outbox += o
+                if (outbox.size > 500) outbox.removeAt(0)
+            }
+        }
+    }
 
     private fun connectSignaling() {
-        val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).connectTimeout(15, TimeUnit.SECONDS).build()
-        http = client
+        if (stopped) return
+        val client = http ?: OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS).readTimeout(0, TimeUnit.SECONDS).build().also { http = it }
+        val gen = ++wsGen
         ws = client.newWebSocket(Request.Builder().url(wsUrl(serverBase)).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                send(JSONObject().put("t", "host").put("pw", password).put("name", Build.MODEL))
+                exec.execute {
+                    if (gen != wsGen || stopped) return@execute
+                    val hello = JSONObject().put("t", "host").put("pw", password).put("name", Build.MODEL).put("turn", turnPref)
+                    val r = room; val k = hostKey
+                    if (r != null && k != null) hello.put("resume", JSONObject().put("room", r).put("key", k))
+                    webSocket.send(hello.toString())
+                }
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
-                exec.execute { try { onSignal(JSONObject(text)) } catch (e: Throwable) { Log.w(TAG, "signal", e) } }
+                exec.execute {
+                    if (gen != wsGen) return@execute
+                    try { onSignal(JSONObject(text)) } catch (e: Throwable) { Log.w(TAG, "signal", e) }
+                }
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                if (!stopped) fail("连不上服务器：${t.message ?: t.javaClass.simpleName}（${serverBase}）")
+                exec.execute { if (gen == wsGen) signalingLost("连接失败：${t.message ?: t.javaClass.simpleName}") }
             }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                if (!stopped) fail("和服务器的连接断了")
+                exec.execute { if (gen == wsGen) signalingLost("服务器关闭了连接（$code $reason）") }
             }
         })
+    }
+
+    /** 牵线断了：不结束共享，退避重连（WebRTC 连接照常） */
+    private fun signalingLost(why: String) {
+        if (stopped) return
+        signalingUp = false
+        ws = null
+        updateNotification()
+        // 一次都没连上过（地址错 / 服务器没开）：试 4 次就结束并说原因；连上过的断开了就一直重连
+        if (room == null && reconnectTry >= 4) {
+            end("连不上服务器（$serverBase）：$why"); return
+        }
+        val delay = BACKOFF[min(reconnectTry, BACKOFF.size - 1)]
+        reconnectTry++
+        SuiteShareLog.log("牵线断开：$why → ${delay} 秒后第 $reconnectTry 次重连")
+        main.postDelayed({ exec.execute { connectSignaling() } }, delay * 1000)
     }
 
     private fun onSignal(m: JSONObject) {
         if (stopped) return
         when (m.optString("t")) {
             "hosted" -> {
-                room = m.optString("room")
+                val resumed = m.optBoolean("resumed")
+                val newRoom = m.optString("room")
+                if (!resumed && room != null && room != newRoom) {
+                    SuiteShareLog.log("原来的房间 $room 已经关了，换成新房间 $newRoom（要重新发链接）")
+                    for (p in peers.values) closePeer(p)
+                    peers.clear()
+                    main.post { Toast.makeText(this, "掉线太久，房间换成 $newRoom，请重新发链接", Toast.LENGTH_LONG).show() }
+                }
+                room = newRoom
+                hostKey = m.optString("key")
                 ice = parseIce(m.optJSONArray("ice"))
+                signalingUp = true
+                reconnectTry = 0
+                SuiteShareLog.log((if (resumed) "牵线重连成功，回到房间 " else "牵线连上，房间 ") + "$room，ICE 服务器 ${ice.size} 个，服务器上的中转：${m.optJSONArray("turnModes")}")
+                if (resumed) {
+                    // 断开期间进来的观看者
+                    val list = m.optJSONArray("viewers") ?: JSONArray()
+                    val ids = HashSet<String>()
+                    for (i in 0 until list.length()) {
+                        val v = list.optJSONObject(i) ?: continue
+                        val id = v.optString("peer"); ids += id
+                        if (!peers.containsKey(id)) newPeer(id, v.optString("name"))
+                    }
+                    for (id in peers.keys.toList()) if (id !in ids) peers.remove(id)?.let { closePeer(it) }
+                }
+                val pending = ArrayList(outbox); outbox.clear()
+                for (o in pending) send(o)
                 updateNotification()
-                Log.i(TAG, "房间 $room，ICE ${ice.size} 个")
             }
-            "error" -> fail(m.optString("msg", "服务器拒绝了"))
+            "resume-failed" -> SuiteShareLog.log("回不到原房间：${m.optString("msg")}")
+            "error" -> {
+                SuiteShareLog.log("服务器拒绝：${m.optString("msg")}")
+                if (room == null) end(m.optString("msg", "服务器拒绝了"))
+            }
             "peer-join" -> {
                 val peer = m.optString("peer")
-                newPeer(peer)
                 val name = m.optString("name")
+                SuiteShareLog.log("$name 进来了（$peer）")
+                newPeer(peer, name)
                 main.post { Toast.makeText(this, "$name 开始看你的屏幕", Toast.LENGTH_SHORT).show() }
                 updateNotification()
             }
             "peer-leave" -> {
-                peers.remove(m.optString("peer"))?.let { try { it.close(); it.dispose() } catch (_: Throwable) {} }
+                peers.remove(m.optString("peer"))?.let { SuiteShareLog.log("${it.name} 走了"); closePeer(it) }
                 updateNotification()
             }
             "signal" -> {
-                val pc = peers[m.optString("from")] ?: return
+                val p = peers[m.optString("from")] ?: return
                 val d = m.optJSONObject("data") ?: return
                 if (d.has("sdp")) {
-                    pc.setRemoteDescription(Sdp("answer"), SessionDescription(SessionDescription.Type.ANSWER, d.optString("sdp")))
+                    p.pc.setRemoteDescription(Sdp("answer"), SessionDescription(SessionDescription.Type.ANSWER, d.optString("sdp")))
                 } else d.optJSONObject("candidate")?.let { c ->
                     val cand = c.optString("candidate")
-                    if (cand.isNotEmpty()) pc.addIceCandidate(IceCandidate(c.optString("sdpMid"), c.optInt("sdpMLineIndex"), cand))
+                    if (cand.isNotEmpty()) p.pc.addIceCandidate(IceCandidate(c.optString("sdpMid"), c.optInt("sdpMLineIndex"), cand))
                 }
             }
             "chat" -> {
@@ -465,7 +711,15 @@ class SuiteRtcShareService : Service() {
         return out
     }
 
-    private fun newPeer(peer: String) {
+    // ---------------------------------------------------------------- WebRTC
+
+    private fun degradation() = when (prefer) {
+        1 -> RtpParameters.DegradationPreference.MAINTAIN_RESOLUTION
+        2 -> RtpParameters.DegradationPreference.BALANCED
+        else -> RtpParameters.DegradationPreference.MAINTAIN_FRAMERATE
+    }
+
+    private fun newPeer(peerId: String, name: String) {
         val f = factory ?: return
         val cfg = PeerConnection.RTCConfiguration(ice).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
@@ -473,16 +727,17 @@ class SuiteRtcShareService : Service() {
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
         }
+        lateinit var peer: Peer
         val pc = f.createPeerConnection(cfg, object : PeerConnection.Observer {
             override fun onSignalingChange(state: PeerConnection.SignalingState) {}
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
-                Log.i(TAG, "观众 $peer ICE $state")
+                exec.execute { onIceState(peer, state) }
             }
             override fun onIceConnectionReceivingChange(receiving: Boolean) {}
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
             override fun onIceCandidate(c: IceCandidate) {
                 exec.execute {
-                    send(JSONObject().put("t", "signal").put("to", peer).put("data", JSONObject().put("candidate",
+                    send(JSONObject().put("t", "signal").put("to", peerId).put("data", JSONObject().put("candidate",
                         JSONObject().put("candidate", c.sdp).put("sdpMid", c.sdpMid).put("sdpMLineIndex", c.sdpMLineIndex))))
                 }
             }
@@ -492,18 +747,18 @@ class SuiteRtcShareService : Service() {
             override fun onDataChannel(dc: org.webrtc.DataChannel) {}
             override fun onRenegotiationNeeded() {}
         }) ?: return
-        peers[peer] = pc
+        peer = Peer(peerId, name, pc)
+        peers[peerId] = peer
         val streams = listOf("nagi")
         videoTrack?.let { vt ->
             val sender = pc.addTrack(vt, streams)
-            // 码率上限 + 优先保清晰度（屏幕上的字）
             try {
                 val p = sender.parameters
-                p.degradationPreference = RtpParameters.DegradationPreference.MAINTAIN_RESOLUTION
-                for (en in p.encodings) { en.maxBitrateBps = bitrate; en.maxFramerate = FPS }
+                p.degradationPreference = degradation()
+                for (en in p.encodings) { en.maxBitrateBps = quality.max; en.maxFramerate = FPS }
                 sender.setParameters(p)
-            } catch (e: Throwable) { Log.w(TAG, "bitrate", e) }
-            // H.264 排第一（硬件编码）
+            } catch (e: Throwable) { Log.w(TAG, "encoding params", e) }
+            // H.264 排第一（硬件编码）；没有 H.264 时 VP8 自然排前面
             try {
                 val caps = f.getRtpSenderCapabilities(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO).codecs
                 val sorted = caps.filter { it.name.equals("H264", true) } + caps.filter { !it.name.equals("H264", true) }
@@ -511,36 +766,142 @@ class SuiteRtcShareService : Service() {
             } catch (e: Throwable) { Log.w(TAG, "codec prefs", e) }
         }
         audioTrack?.let { pc.addTrack(it, streams) }
-        pc.createOffer(object : Sdp("offer") {
+        // 码率：起点不要太低（默认从 300k 慢慢涨，前十几秒很糊）
+        pc.setBitrate(quality.min, quality.start, quality.max)
+        makeOffer(peer, iceRestart = false)
+    }
+
+    private fun makeOffer(peer: Peer, iceRestart: Boolean) {
+        val c = MediaConstraints()
+        if (iceRestart) c.mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true"))
+        peer.pc.createOffer(object : Sdp("offer") {
             override fun onCreateSuccess(desc: SessionDescription) {
                 exec.execute {
-                    pc.setLocalDescription(Sdp("local"), desc)
-                    send(JSONObject().put("t", "signal").put("to", peer)
+                    if (peers[peer.id] !== peer) return@execute
+                    peer.pc.setLocalDescription(Sdp("local"), desc)
+                    send(JSONObject().put("t", "signal").put("to", peer.id)
                         .put("data", JSONObject().put("type", "offer").put("sdp", desc.description)))
                 }
             }
-        }, MediaConstraints())
+        }, c)
+    }
+
+    private fun onIceState(peer: Peer, state: PeerConnection.IceConnectionState) {
+        if (peers[peer.id] !== peer || stopped) return
+        SuiteShareLog.log("${peer.name}：ICE $state")
+        when (state) {
+            PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> {
+                peer.connected = true; peer.restarts = 0; peer.disconnectedAt = 0
+            }
+            PeerConnection.IceConnectionState.DISCONNECTED -> {
+                peer.disconnectedAt = SystemClock.elapsedRealtime()
+                // 5 秒还没恢复就重启 ICE
+                main.postDelayed({
+                    exec.execute {
+                        if (peers[peer.id] === peer && peer.disconnectedAt != 0L &&
+                            SystemClock.elapsedRealtime() - peer.disconnectedAt >= 4900) restartIce(peer)
+                    }
+                }, 5000)
+            }
+            PeerConnection.IceConnectionState.FAILED -> restartIce(peer)
+            else -> {}
+        }
+    }
+
+    private fun restartIce(peer: Peer) {
+        peer.restarts++
+        if (peer.restarts > 3) {
+            SuiteShareLog.log("${peer.name}：ICE 重启 3 次都没连上（网络不通、中转也不行），等他重新打开页面")
+            return
+        }
+        SuiteShareLog.log("${peer.name}：ICE restart（第 ${peer.restarts} 次）")
+        peer.disconnectedAt = 0
+        try { peer.pc.restartIce() } catch (_: Throwable) {}
+        makeOffer(peer, iceRestart = true)
+    }
+
+    private fun closePeer(p: Peer) {
+        try { p.pc.close(); p.pc.dispose() } catch (_: Throwable) {}
     }
 
     private open inner class Sdp(val what: String) : SdpObserver {
         override fun onCreateSuccess(desc: SessionDescription) {}
         override fun onSetSuccess() {}
-        override fun onCreateFailure(msg: String?) { Log.w(TAG, "$what create: $msg") }
-        override fun onSetFailure(msg: String?) { Log.w(TAG, "$what set: $msg") }
+        override fun onCreateFailure(msg: String?) { SuiteShareLog.log("SDP $what 创建失败：$msg") }
+        override fun onSetFailure(msg: String?) { SuiteShareLog.log("SDP $what 设置失败：$msg") }
+    }
+
+    // ---------------------------------------------------------------- 统计 + 心跳（每 2 秒）
+
+    private fun num(m: Map<String, Any?>, k: String) = (m[k] as? Number)?.toDouble()
+
+    private fun tickStats() {
+        if (stopped) return
+        if (signalingUp) send(JSONObject().put("t", "ping"))     // Cloudflare 代理的 WebSocket 空闲约 100 秒会断
+        val list = peers.values.toList()
+        if (list.isEmpty()) {
+            stats.bitrateKbps = 0; stats.path = ""
+        }
+        var total = 0.0
+        for (p in list) {
+            p.pc.getStats { report: RTCStatsReport -> exec.execute { readStats(p, report) } }
+        }
+        list.forEach { total += it.kbps }
+        stats.bitrateKbps = total.roundToInt()
+        val now = SystemClock.elapsedRealtime()
+        if (list.isNotEmpty() && now - lastStatLog > 30_000) {
+            lastStatLog = now
+            SuiteShareLog.log("统计：${list.size} 人，${stats.bitrateKbps} kbps，${stats.width}x${stats.height}@${"%.0f".format(stats.fps)}，" +
+                "${stats.codec} ${stats.encoder}，受限于 ${stats.limitedBy.ifEmpty { "无" }}，RTT ${stats.rttMs} ms，${stats.path}")
+        }
+        main.postDelayed({ exec.execute { tickStats() } }, 2000)
+    }
+
+    private fun readStats(p: Peer, report: RTCStatsReport) {
+        val all = report.statsMap
+        var localCand: String? = null
+        for (s in all.values) {
+            val m = s.members
+            when (s.type) {
+                "outbound-rtp" -> if (m["kind"] == "video") {
+                    val bytes = num(m, "bytesSent") ?: 0.0
+                    val now = SystemClock.elapsedRealtime()
+                    if (p.lastAt > 0 && now > p.lastAt) p.kbps = (bytes - p.lastBytes) * 8 / (now - p.lastAt)
+                    p.lastBytes = bytes; p.lastAt = now
+                    num(m, "framesPerSecond")?.let { stats.fps = it }
+                    num(m, "frameWidth")?.let { stats.width = it.toInt() }
+                    num(m, "frameHeight")?.let { stats.height = it.toInt() }
+                    (m["encoderImplementation"] as? String)?.let { stats.encoder = it }
+                    (m["qualityLimitationReason"] as? String)?.let { stats.limitedBy = if (it == "none") "" else it }
+                    (m["codecId"] as? String)?.let { id -> (all[id]?.members?.get("mimeType") as? String)?.let { stats.codec = it.removePrefix("video/") } }
+                }
+                "candidate-pair" -> if (m["state"] == "succeeded" && (m["nominated"] == true)) {
+                    num(m, "currentRoundTripTime")?.let { stats.rttMs = (it * 1000).roundToInt() }
+                    localCand = m["localCandidateId"] as? String
+                }
+            }
+        }
+        localCand?.let { id ->
+            val lc = all[id]?.members ?: return@let
+            val relay = lc["candidateType"] == "relay"
+            val proto = ((lc["relayProtocol"] ?: lc["protocol"]) as? String)?.uppercase() ?: ""
+            stats.path = if (relay) "经中转（$proto）" else "直连（$proto）"
+        }
     }
 
     // ---------------------------------------------------------------- 结束
 
     override fun onDestroy() {
+        if (!stopped) SuiteShareLog.log("服务被系统结束")
         stopped = true
         SuiteRtcShare.service = null
         displayListener?.let { (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager).unregisterDisplayListener(it) }
-        try { ws?.close(1000, "bye") } catch (_: Throwable) {}
+        val w = ws
+        main.postDelayed({ try { w?.close(1000, "bye") } catch (_: Throwable) {} }, 300)   // 先让 bye 发出去
         exec.execute {
-            for (pc in peers.values) { try { pc.close(); pc.dispose() } catch (_: Throwable) {} }
+            for (p in peers.values) closePeer(p)
             peers.clear()
             try { capturer?.stopCapture() } catch (_: Throwable) {}
-            try { capturer?.dispose() } catch (_: Throwable) {}
             try { playback?.stop(); playback?.release() } catch (_: Throwable) {}
             try { videoTrack?.dispose(); videoSource?.dispose() } catch (_: Throwable) {}
             try { audioTrack?.dispose(); audioSource?.dispose() } catch (_: Throwable) {}
@@ -548,9 +909,9 @@ class SuiteRtcShareService : Service() {
             try { factory?.dispose() } catch (_: Throwable) {}
             try { adm?.release() } catch (_: Throwable) {}
             try { egl?.release() } catch (_: Throwable) {}
-            http?.dispatcher?.executorService?.shutdown()
         }
         exec.shutdown()
+        main.postDelayed({ http?.dispatcher?.executorService?.shutdown() }, 1000)
         super.onDestroy()
     }
 }

@@ -5,6 +5,7 @@
 #   python deploy_nagi_share.py                     部署 / 更新（TURN 用 config.json 里现在的设置；第一次默认 cloudflare）
 #   python deploy_nagi_share.py --turn cloudflare   用 Cloudflare Realtime TURN（Key ID / API Token 从 nagi_share_secrets.json 读，没有就问）
 #   python deploy_nagi_share.py --turn coturn       在这台服务器上装 coturn 自建 TURN（turn.<域名> 要灰色云 + 防火墙开端口，见部署说明）
+#   python deploy_nagi_share.py --turn both         两个都开（Cloudflare + 自建 coturn），手机端可选「自动 / Cloudflare / 自建」
 #   python deploy_nagi_share.py --turn none         不要 TURN（只能直连）
 #   python deploy_nagi_share.py --rollback          还原上一次部署前的 Nginx / 服务配置
 #   python deploy_nagi_share.py --status            只看状态
@@ -204,7 +205,7 @@ def nginx_patch(conf):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--turn', choices=['cloudflare', 'coturn', 'none'])
+    ap.add_argument('--turn', choices=['cloudflare', 'coturn', 'both', 'none'])
     ap.add_argument('--rollback', action='store_true')
     ap.add_argument('--status', action='store_true')
     a = ap.parse_args()
@@ -269,9 +270,9 @@ def main():
     cfg['turn'] = turn
     cfg['listen_host'] = '127.0.0.1'
     cfg['listen_port'] = PORT
-    if turn == 'cloudflare':
+    if turn in ('cloudflare', 'both'):
         cfg['cloudflare'] = ask_cloudflare(cfg.get('cloudflare') or {})
-    if turn == 'coturn':
+    if turn in ('coturn', 'both'):
         ct = cfg.get('coturn') or {}
         if not ct.get('secret') or ct['secret'].startswith('部署脚本'):
             ct['secret'] = secrets.token_urlsafe(32)
@@ -284,7 +285,7 @@ def main():
         f"&& chmod 644 {REMOTE}/web/index.html {REMOTE}/nagi_share.py && echo 配置写好了（TURN={turn}）")
 
     # ---- 5. coturn（可选） ----
-    if turn == 'coturn':
+    if turn in ('coturn', 'both'):
         print("\n[5/7] 安装 / 配置 coturn ...")
         run("command -v turnserver >/dev/null || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq coturn) "
             "&& echo coturn 已安装", timeout=900)
@@ -337,7 +338,7 @@ def main():
     print("\n✅ 部署完成。")
     print("   观看页面：https://%s/share/" % DOMAIN)
     print("   App 里「一起看 → 共享我的屏幕 → 经服务器」的服务器地址填：https://%s/share/" % DOMAIN)
-    if turn == 'coturn':
+    if turn in ('coturn', 'both'):
         print("   ⚠️ 自建 TURN 还要：① Cloudflare DNS 加 A 记录 %s → 服务器 IP，必须是灰色云（仅 DNS）；"
               "② GCP 防火墙放行 UDP+TCP 3478、UDP 49160-49200（见部署说明）" % TURN_HOST)
     print("   回滚：python deploy_nagi_share.py --rollback")
