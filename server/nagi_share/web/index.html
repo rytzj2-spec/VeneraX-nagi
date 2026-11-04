@@ -153,8 +153,10 @@ setInterval(async()=>{
       lines.push('画面   '+(vin.frameWidth||0)+'×'+(vin.frameHeight||0)+' · '+Math.round(vin.framesPerSecond||0)+' 帧');
       lines.push('丢包   '+(got+lost?(lost*100/(got+lost)).toFixed(1):'0')+'%（'+lost+'）· 抖动 '+Math.round((vin.jitter||0)*1000)+' ms');
       const c=vin.codecId&&m[vin.codecId];if(c)lines.push('编码   '+(c.mimeType||'').replace('video/',''));
-      if(vin.jitterBufferDelay&&vin.jitterBufferEmittedCount)lines.push('缓冲   '+Math.round(vin.jitterBufferDelay*1000/vin.jitterBufferEmittedCount)+' ms');
-      prevStat={v:vin.bytesReceived,a:ain?ain.bytesReceived:0,t:now}}
+      // 缓冲：取最近一秒的（累计平均会被刚连上时的高峰拖住，看着一直很高）
+      if(vin.jitterBufferEmittedCount){const dn=vin.jitterBufferEmittedCount-(prevStat&&prevStat.jn||0),dd=vin.jitterBufferDelay-(prevStat&&prevStat.jd||0);
+        if(dn>0)lines.push('缓冲   '+Math.round(dd*1000/dn)+' ms')}
+      prevStat={v:vin.bytesReceived,a:ain?ain.bytesReceived:0,t:now,jd:vin.jitterBufferDelay||0,jn:vin.jitterBufferEmittedCount||0}}
     if(pair){const l=m[pair.localCandidateId],rc=m[pair.remoteCandidateId];
       const relay=(l&&l.candidateType==='relay')||(rc&&rc.candidateType==='relay');
       const proto=((l&&(l.relayProtocol||l.protocol))||'').toUpperCase();

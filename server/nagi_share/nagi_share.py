@@ -13,6 +13,8 @@ Nagisaland 屏幕共享 · 牵线服务（WebRTC signaling）
 运行：python3 nagi_share.py --config /opt/nagi-share/config.json
 """
 import argparse
+import struct
+import socket
 import asyncio
 import base64
 import hashlib
@@ -110,10 +112,37 @@ def turn_modes():
     return {"cloudflare": ["cloudflare"], "coturn": ["coturn"], "both": ["coturn", "cloudflare"]}.get(mode, [])  # 自建（国内）排前面
 
 
+_coturn_ok = {"t": 0, "ok": True}
+
+
+def _coturn_alive():
+    """给自建 coturn 发一个 STUN Binding 请求，1.5 秒内有回应就算活着（结果缓存 60 秒）"""
+    if time.time() - _coturn_ok["t"] < 60:
+        return _coturn_ok["ok"]
+    ct = CFG.get("coturn") or {}
+    ok = False
+    try:
+        tid = secrets.token_bytes(12)
+        req = struct.pack("!HHI", 0x0001, 0, 0x2112A442) + tid
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+            sk.settimeout(1.5)
+            sk.sendto(req, (ct["host"], int(ct.get("port", 3478))))
+            data, _ = sk.recvfrom(2048)
+            ok = len(data) >= 20 and data[8:20] == tid
+    except Exception as e:
+        log.warning("自建 coturn 探测失败：%s", e)
+    _coturn_ok.update(t=time.time(), ok=ok)
+    return ok
+
+
 async def ice_servers(tag, pref="auto"):
     servers = [{"urls": u} for u in CFG.get("stun", ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"])]
     modes = turn_modes()
     use = modes if pref in ("auto", "", None) else [m for m in modes if m == pref] or modes
+    if pref in ("auto", "", None) and len(use) > 1 and "coturn" in use:
+        # 自动：自建（国内）活着就只给它——两个都给时 WebRTC 会随便挑一个先通的，常挑到绕海外的 Cloudflare
+        alive = await asyncio.get_running_loop().run_in_executor(None, _coturn_alive)
+        use = ["coturn"] if alive else [m for m in use if m != "coturn"]
     for m in use:
         try:
             if m == "cloudflare":
