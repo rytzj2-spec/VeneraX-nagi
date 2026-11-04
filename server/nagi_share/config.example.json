@@ -14,6 +14,7 @@
     "host": "turn.<你的域名>（部署脚本按 deploy_local.json 的 domain 自动填）",
     "port": 3478,
     "secret": "部署脚本 --coturn 时自动生成",
-    "ttl": 43200
+    "ttl": 43200,
+    "external": false
   }
 }

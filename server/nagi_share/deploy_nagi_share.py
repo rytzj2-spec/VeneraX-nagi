@@ -278,14 +278,17 @@ def main():
             ct['secret'] = secrets.token_urlsafe(32)
         ct.setdefault('port', 3478)
         ct.setdefault('ttl', 43200)
-        ct['host'] = TURN_HOST
+        if not ct.get('external'):      # external=true：coturn 在别的服务器（如国内中转机），host / secret 手动配好，这里不动
+            ct['host'] = TURN_HOST
         cfg['coturn'] = ct
     put_text(sftp, f"{REMOTE}/config.json", json.dumps(cfg, ensure_ascii=False, indent=2))
     run(f"chown -R root:nagishare {REMOTE} && chmod 640 {REMOTE}/config.json && chmod 755 {REMOTE} {REMOTE}/web "
         f"&& chmod 644 {REMOTE}/web/index.html {REMOTE}/nagi_share.py && echo 配置写好了（TURN={turn}）")
 
     # ---- 5. coturn（可选） ----
-    if turn in ('coturn', 'both'):
+    if turn in ('coturn', 'both') and (cfg.get('coturn') or {}).get('external'):
+        print("\n[5/7] coturn：在外部服务器 %s 上，这台不装" % cfg['coturn'].get('host'))
+    elif turn in ('coturn', 'both'):
         print("\n[5/7] 安装 / 配置 coturn ...")
         run("command -v turnserver >/dev/null || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq coturn) "
             "&& echo coturn 已安装", timeout=900)
@@ -338,7 +341,7 @@ def main():
     print("\n✅ 部署完成。")
     print("   观看页面：https://%s/share/" % DOMAIN)
     print("   App 里「一起看 → 共享我的屏幕 → 经服务器」的服务器地址填：https://%s/share/" % DOMAIN)
-    if turn in ('coturn', 'both'):
+    if turn in ('coturn', 'both') and not (cfg.get('coturn') or {}).get('external'):
         print("   ⚠️ 自建 TURN 还要：① Cloudflare DNS 加 A 记录 %s → 服务器 IP，必须是灰色云（仅 DNS）；"
               "② GCP 防火墙放行 UDP+TCP 3478、UDP 49160-49200（见部署说明）" % TURN_HOST)
     print("   回滚：python deploy_nagi_share.py --rollback")

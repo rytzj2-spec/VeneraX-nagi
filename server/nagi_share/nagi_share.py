@@ -107,7 +107,7 @@ def _coturn_ice(tag):
 def turn_modes():
     """服务器上配好了哪些中转：config.json 的 turn = cloudflare / coturn / both / none"""
     mode = CFG.get("turn", "none")
-    return {"cloudflare": ["cloudflare"], "coturn": ["coturn"], "both": ["cloudflare", "coturn"]}.get(mode, [])
+    return {"cloudflare": ["cloudflare"], "coturn": ["coturn"], "both": ["coturn", "cloudflare"]}.get(mode, [])  # 自建（国内）排前面
 
 
 async def ice_servers(tag, pref="auto"):
