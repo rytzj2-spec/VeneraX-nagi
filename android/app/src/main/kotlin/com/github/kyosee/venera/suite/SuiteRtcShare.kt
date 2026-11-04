@@ -477,7 +477,13 @@ class SuiteRtcShareService : Service() {
             .setUseStereoOutput(true)
             .setUseHardwareAcousticEchoCanceler(true)    // 只影响真麦克风（开麦时才混进去），播放声音不经过它
             .setUseHardwareNoiseSuppressor(true)
-            .setAudioRecordDataCallback { _, channels, _, buffer -> fillWithPlayback(buffer, channels) }
+            // 注意：这个库（stream-webrtc-android 1.3.10）的 setAudioRecordDataCallback 只是存起来、从来不调用，
+            // 所以改不了发出去的声音。改成：WebRTC 一开始录音，就把它内部的 AudioRecord 换成 MixAudioRecord
+            // （照样读麦克风来保持节奏，但交出去的是「播放的声音」，开麦时再叠上麦克风）。
+            .setAudioRecordStateCallback(object : JavaAudioDeviceModule.AudioRecordStateCallback {
+                override fun onWebRtcAudioRecordStart() { swapAudioRecord() }
+                override fun onWebRtcAudioRecordStop() {}
+            })
             .createAudioDeviceModule()
         adm = a
         val enc = DefaultVideoEncoderFactory(e.eglBaseContext, true, true)
@@ -608,12 +614,43 @@ class SuiteRtcShareService : Service() {
         }
     }
 
-    /** WebRTC 每 10ms 录一段麦克风：整段换成播放声音（不够就补静音），麦克风的声音不发出去 */
-    private fun fillWithPlayback(buffer: ByteBuffer, channels: Int) {
-        // 不能用 position / remaining：库交过来时 position 可能已经在末尾（remaining = 0），
-        // 那样一个字节都换不掉，发出去的就是麦克风原声。按整块（capacity）处理，用 duplicate 不动原 position。
+    /** 读麦克风的 AudioRecord，但 read 出去的是播放声音（+ 开麦时的麦克风） */
+    @android.annotation.SuppressLint("MissingPermission")
+    private inner class MixAudioRecord(bufBytes: Int) : AudioRecord(
+        android.media.MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE,
+        AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT, bufBytes) {
+        override fun read(audioBuffer: ByteBuffer, sizeInBytes: Int): Int {
+            val n = super.read(audioBuffer, sizeInBytes)     // 麦克风：阻塞 10ms，顺便给出节奏
+            if (n > 0) try { fillWithPlayback(audioBuffer, 2, n) } catch (_: Throwable) {}
+            return n
+        }
+    }
+
+    /** WebRTC 的录音线程刚开始（还没读第一段）：把它的 AudioRecord 换成 MixAudioRecord */
+    private fun swapAudioRecord() {
+        try {
+            val adm = adm as? JavaAudioDeviceModule ?: return
+            val input = adm.audioInput
+            val f = input.javaClass.getDeclaredField("audioRecord").apply { isAccessible = true }
+            val old = f.get(input) as? AudioRecord
+            if (old is MixAudioRecord) return
+            val bufBytes = max(AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT) * 2, 19200)
+            val mix = MixAudioRecord(bufBytes)
+            if (mix.state != AudioRecord.STATE_INITIALIZED) { SuiteShareLog.log("换录音器失败：MixAudioRecord 没初始化"); mix.release(); return }
+            mix.startRecording()
+            f.set(input, mix)
+            try { old?.stop() } catch (_: Throwable) {}
+            try { old?.release() } catch (_: Throwable) {}
+            SuiteShareLog.log("已换成「播放声音」录音器（录播放声音：${if (audioOn) "开" else "关"}）")
+        } catch (e: Throwable) {
+            SuiteShareLog.log("换录音器失败：$e")
+        }
+    }
+
+    /** 把 buffer 前 [n] 字节换成播放声音（不够就补静音）；开麦时叠上原来的麦克风 */
+    private fun fillWithPlayback(buffer: ByteBuffer, channels: Int, n: Int = -1) {
         val whole = buffer.duplicate().apply { clear() }
-        val len = whole.capacity()
+        val len = if (n > 0) min(n, whole.capacity()) else whole.capacity()
         if (len <= 0) return
         val out = ByteArray(len)
         synchronized(ringLock) {
@@ -637,7 +674,7 @@ class SuiteRtcShareService : Service() {
         if (micOn) {
             // 开麦：把真麦克风录到的（还在 buffer 里）叠加进去
             val mic = ByteArray(len)
-            buffer.duplicate().apply { clear() }.get(mic)
+            buffer.duplicate().apply { clear() }.get(mic, 0, len)
             var i = 0
             while (i + 1 < len) {
                 val a = ((out[i].toInt() and 0xff) or (out[i + 1].toInt() shl 8)).toShort().toInt()
