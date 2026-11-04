@@ -610,8 +610,11 @@ class SuiteRtcShareService : Service() {
 
     /** WebRTC 每 10ms 录一段麦克风：整段换成播放声音（不够就补静音），麦克风的声音不发出去 */
     private fun fillWithPlayback(buffer: ByteBuffer, channels: Int) {
-        val len = buffer.remaining()
-        val pos = buffer.position()
+        // 不能用 position / remaining：库交过来时 position 可能已经在末尾（remaining = 0），
+        // 那样一个字节都换不掉，发出去的就是麦克风原声。按整块（capacity）处理，用 duplicate 不动原 position。
+        val whole = buffer.duplicate().apply { clear() }
+        val len = whole.capacity()
+        if (len <= 0) return
         val out = ByteArray(len)
         synchronized(ringLock) {
             if (channels == 2) {
@@ -634,7 +637,7 @@ class SuiteRtcShareService : Service() {
         if (micOn) {
             // 开麦：把真麦克风录到的（还在 buffer 里）叠加进去
             val mic = ByteArray(len)
-            buffer.position(pos); buffer.get(mic)
+            buffer.duplicate().apply { clear() }.get(mic)
             var i = 0
             while (i + 1 < len) {
                 val a = ((out[i].toInt() and 0xff) or (out[i + 1].toInt() shl 8)).toShort().toInt()
@@ -644,10 +647,14 @@ class SuiteRtcShareService : Service() {
                 i += 2
             }
         }
-        buffer.position(pos)
-        buffer.put(out)
-        buffer.position(pos)
+        whole.clear()
+        whole.put(out)
+        if (!loggedAudioBuf) {
+            loggedAudioBuf = true
+            SuiteShareLog.log("声音回调：每段 $len 字节，$channels 声道，position=${buffer.position()} limit=${buffer.limit()}")
+        }
     }
+    @Volatile private var loggedAudioBuf = false
 
     // ---------------------------------------------------------------- 牵线（自动重连）
 
