@@ -76,3 +76,12 @@ __pycache__/
 
 # 本地专用设置（默认服务器等），不进 Git
 /android/nagi_local.properties
+
+# 陪伴服务的本地数据与凭据，不提交到公开仓库
+/server/nagi_companion/*.sqlite3*
+/server/nagi_companion/.env
+/server/nagi_companion/*.env
+*.keystore
+dart_defines.txt
+panel_config.json
+aliyun_turn_secret.txt

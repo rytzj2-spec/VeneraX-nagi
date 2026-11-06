@@ -1,5 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 陪伴：仅在双方主动授权、用户从页面开始共享后运行 -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
     <!-- Nagisaland 主界面：游戏库认已装的模拟器 / 游戏 App、装 / 卸内置模拟器、识屏翻译（悬浮窗 + 录屏） -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>
@@ -34,6 +40,12 @@
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true"
         android:extractNativeLibs="true">
+        <activity android:name=".companion.CompanionActivity" android:exported="false" android:theme="@style/NagisaTheme"/>
+        <service android:name=".companion.CompanionService" android:exported="false" android:foregroundServiceType="location"/>
+        <receiver android:name=".companion.CompanionAdminReceiver" android:exported="true" android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/companion_admin"/>
+            <intent-filter><action android:name="android.app.action.DEVICE_ADMIN_ENABLED"/></intent-filter>
+        </receiver>
         <!-- Nagisaland 主界面（游戏库 / 小站 / 解压 / 模拟器，WebView + assets/launcher/），桌面入口 -->
         <activity
             android:name="com.nagisaland.mobile.MainActivity"

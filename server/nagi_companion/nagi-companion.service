@@ -1,0 +1,24 @@
+[Unit]
+Description=Nagisaland private companion service
+After=network.target
+
+[Service]
+Type=simple
+User=nagi-companion
+Group=nagi-companion
+WorkingDirectory=/opt/nagi-companion
+EnvironmentFile=/etc/nagi-companion.env
+Environment=NAGI_COMPANION_DB=/var/lib/nagi-companion/companion.sqlite3
+ExecStart=/opt/nagi-companion/venv/bin/python /opt/nagi-companion/app.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/nagi-companion
+MemoryMax=192M
+
+[Install]
+WantedBy=multi-user.target
