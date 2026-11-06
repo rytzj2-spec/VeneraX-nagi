@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="NagiDrawerAnimation">
+        <item name="android:windowEnterAnimation">@anim/nagi_drawer_enter</item>
+        <item name="android:windowExitAnimation">@anim/nagi_drawer_exit</item>
+    </style>
+</resources>

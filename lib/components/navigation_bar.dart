@@ -771,22 +771,30 @@ class _NaviMainViewState extends State<_NaviMainView> {
   @override
   Widget build(BuildContext context) {
     if (nagiUsesSectionShell && state.widget.sectionTitle != null) {
-      return Column(children: [
-        NagiSectionHeader(
-          title: state.widget.sectionTitle!,
-          destinations: [for (final item in state.widget.paneItems)
-            NagiSectionDestination(item.label, item.icon)],
-          selectedIndex: state.currentPage,
-          onSelected: state.updatePage,
-          actions: [for (final action in state.widget.paneActions)
-            NagiSectionAction(action.label, action.icon, action.onTap)],
-        ),
-        Expanded(child: MediaQuery.removePadding(
-          context: context,
-          removeTop: true,
-          child: SizedBox.expand(child: state.buildMainViewContent()),
-        )),
-      ]);
+      return Column(
+        children: [
+          NagiSectionHeader(
+            title: state.widget.sectionTitle!,
+            destinations: [
+              for (final item in state.widget.paneItems)
+                NagiSectionDestination(item.label, item.icon),
+            ],
+            selectedIndex: state.currentPage,
+            onSelected: state.updatePage,
+            actions: [
+              for (final action in state.widget.paneActions)
+                NagiSectionAction(action.label, action.icon, action.onTap),
+            ],
+          ),
+          Expanded(
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              child: SizedBox.expand(child: state.buildMainViewContent()),
+            ),
+          ),
+        ],
+      );
     }
     var shouldShowAppBar = state.controller.value < 2;
     return Column(

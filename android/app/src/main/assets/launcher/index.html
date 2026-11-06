@@ -162,6 +162,7 @@ ol.steps { padding-left: 20px; margin: 8px 0; color: var(--sub); font-size: 13px
 <body>
 
 <header class="top">
+  <button class="icon" id="btnDrawer" aria-label="打开导航"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
   <div class="brand"><img src="logo.png" alt=""><div>Nagisaland<br><small id="tabTitle">游戏库</small></div></div>
   <button class="icon" id="btnAdd" aria-label="添加游戏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></button>
   <button class="icon" id="btnRefresh" aria-label="重新扫描"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
@@ -310,6 +311,7 @@ const App = (() => {
   }
 
   Library.init(); Site.init(); Extract.init(); Emulators.init();
+  $('#btnDrawer').onclick = () => { if (N && N.openMore) N.openMore(cur || 'lib'); };
   $('#btnPerm').onclick = () => N.requestStorage();
   $('#mask').onclick = closeSheet;
   // 底栏：放哪些、什么顺序由原生的 SuiteNavConfig 决定（和各分区的原生底栏、横屏竖排栏共用一份），其余进「更多」

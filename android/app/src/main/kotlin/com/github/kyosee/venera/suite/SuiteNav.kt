@@ -57,6 +57,7 @@ object SuiteNav {
     private var callbacksRegistered = false
     @Volatile private var pendingTab: String? = null
     private var nagiRef: WeakReference<Activity>? = null
+    private var resumedRef: WeakReference<Activity>? = null
 
     @JvmStatic
     fun enabled(): Boolean {
@@ -166,6 +167,7 @@ object SuiteNav {
             }
             override fun onActivityStarted(a: Activity) { remember(a) }
             override fun onActivityResumed(a: Activity) {
+                resumedRef = WeakReference(a)
                 remember(a)
                 if (a.javaClass.name == NAGI_MAIN) {
                     // gal 全关了：主界面没东西，直接进第一个能用的分区
@@ -179,10 +181,13 @@ object SuiteNav {
                 if (a.javaClass.name == NAGI_MAIN) applyPendingTab(a)
                 SuitePerf.onResumed(a, keyOf(a))
             }
-            override fun onActivityPaused(a: Activity) {}
+            override fun onActivityPaused(a: Activity) {
+                SuiteDrawer.dismissFor(a)
+                if (resumedRef?.get() === a) resumedRef = null
+            }
             override fun onActivityStopped(a: Activity) {}
             override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
-            override fun onActivityDestroyed(a: Activity) {}
+            override fun onActivityDestroyed(a: Activity) { SuiteDrawer.dismissFor(a) }
         })
     }
 
@@ -224,6 +229,15 @@ object SuiteNav {
     @JvmStatic
     fun registerEngine(key: String, engine: FlutterEngine) {
         engines[key] = WeakReference(engine)
+        MethodChannel(engine.dartExecutor.binaryMessenger, "nagisaland/navigation").setMethodCallHandler { call, result ->
+            val a = resumedRef?.get()
+            if (call.method != "openDrawer") result.notImplemented()
+            else if (a == null || keyOf(a) != key) result.error("inactive", "分区不在前台", null)
+            else try {
+                SuiteDrawer.show(a, key)
+                result.success(null)
+            } catch (e: Exception) { result.error("drawer", e.message, null) }
+        }
     }
 
     /** 打开某个分区自己的设置：Flutter 分区发 nagisaland/suite 的 openSettings 给 Dart；H 打开它的设置页；主界面交给网页 */
@@ -490,7 +504,7 @@ class SuiteNavBar(ctx: Context, private val current: String, private val onPick:
                     performClick()
                     val k = keys[idx]
                     // 「更多」是独立页面（SuiteMoreActivity）
-                    if (k == "more") (context as? Activity)?.let { if (current != "more") it.startActivity(Intent(it, SuiteMoreActivity::class.java)) }
+                    if (k == "more") (context as? Activity)?.let { SuiteDrawer.show(it, current) }
                     else if (k != current) onPick(k)
                 }
                 downIdx = -1

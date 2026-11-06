@@ -7,7 +7,9 @@ import 'package:flutter/foundation.dart';
 const bool kNagiUnifiedTheme = true;
 
 // Only the Android suite has a native application-level navigation bar.
-bool get nagiUsesSectionShell => kNagiUnifiedTheme && !kIsWeb &&
+bool get nagiUsesSectionShell =>
+    kNagiUnifiedTheme &&
+    !kIsWeb &&
     defaultTargetPlatform == TargetPlatform.android;
 
 class NagiColors {
@@ -78,7 +80,10 @@ class NagiTheme {
       canvasColor: NagiColors.bg,
       cardColor: NagiColors.card,
       dividerColor: NagiColors.line,
-      dividerTheme: const DividerThemeData(color: NagiColors.line, thickness: 1),
+      dividerTheme: const DividerThemeData(
+        color: NagiColors.line,
+        thickness: 1,
+      ),
       cardTheme: CardThemeData(
         color: NagiColors.card,
         elevation: 0,
@@ -92,7 +97,10 @@ class NagiTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: NagiColors.card,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -103,14 +111,22 @@ class NagiTheme {
           borderSide: const BorderSide(color: NagiColors.pink, width: 1.5),
         ),
       ),
-      filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
-        minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      )),
-      outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(
-        minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      )),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
       snackBarTheme: const SnackBarThemeData(
         backgroundColor: NagiColors.cardHigh,
         contentTextStyle: TextStyle(color: NagiColors.text),
@@ -134,7 +150,10 @@ class NagiTheme {
         backgroundColor: NagiColors.bg,
         indicatorColor: Color(0xFF3A2245),
       ),
-      textTheme: base.textTheme.apply(bodyColor: NagiColors.text, displayColor: NagiColors.text),
+      textTheme: base.textTheme.apply(
+        bodyColor: NagiColors.text,
+        displayColor: NagiColors.text,
+      ),
     );
   }
 }

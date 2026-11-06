@@ -36,19 +36,24 @@ if (nagiLocalFile.exists()) nagiLocalFile.withReader("UTF-8") { nagiLocal.load(i
 
 def keystorePropertiesFile = rootProject.file("key.properties")
 def keystoreProperties = new Properties()
-if (!keystorePropertiesFile.exists()) {
-    throw new GradleException("Missing android/key.properties for release signing")
-}
-keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-["storeFile", "storePassword", "keyAlias", "keyPassword"].each { key ->
-    def value = keystoreProperties[key]
-    if (value == null || value.toString().trim().isEmpty()) {
-        throw new GradleException("Missing android/key.properties value: ${key}")
+// Explicit unsigned cloud build; default local release signing is unchanged.
+def nagiUnsignedBuild = providers.gradleProperty("nagiUnsignedBuild").orNull == "true"
+def releaseStoreFile = null
+if (!nagiUnsignedBuild) {
+    if (!keystorePropertiesFile.exists()) {
+        throw new GradleException("Missing android/key.properties for release signing")
     }
-}
-def releaseStoreFile = rootProject.file(keystoreProperties["storeFile"])
-if (!releaseStoreFile.exists()) {
-    throw new GradleException("Missing Android release keystore file: ${releaseStoreFile}")
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    ["storeFile", "storePassword", "keyAlias", "keyPassword"].each { key ->
+        def value = keystoreProperties[key]
+        if (value == null || value.toString().trim().isEmpty()) {
+            throw new GradleException("Missing android/key.properties value: ${key}")
+        }
+    }
+    releaseStoreFile = rootProject.file(keystoreProperties["storeFile"])
+    if (!releaseStoreFile.exists()) {
+        throw new GradleException("Missing Android release keystore file: ${releaseStoreFile}")
+    }
 }
 
 android {
@@ -88,16 +93,20 @@ android {
 
     signingConfigs {
         debug {
-            storeFile releaseStoreFile
-            storePassword keystoreProperties['storePassword']
-            keyAlias keystoreProperties['keyAlias']
-            keyPassword keystoreProperties['keyPassword']
+            if (!nagiUnsignedBuild) {
+                storeFile releaseStoreFile
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
         }
         release {
-            keyAlias keystoreProperties['keyAlias']
-            keyPassword keystoreProperties['keyPassword']
-            storeFile releaseStoreFile
-            storePassword keystoreProperties['storePassword']
+            if (!nagiUnsignedBuild) {
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                storeFile releaseStoreFile
+                storePassword keystoreProperties['storePassword']
+            }
         }
     }
 
@@ -123,13 +132,13 @@ android {
             ndk {
                 abiFilters "armeabi-v7a", "arm64-v8a", "x86_64"
             }
-            signingConfig signingConfigs.release
+            signingConfig = nagiUnsignedBuild ? null : signingConfigs.release
         }
         debug {
             ndk {
                 abiFilters "armeabi-v7a", "arm64-v8a", "x86_64"
             }
-            signingConfig signingConfigs.debug
+            signingConfig = nagiUnsignedBuild ? null : signingConfigs.debug
         }
     }
 

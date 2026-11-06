@@ -38,6 +38,11 @@ internal object PageKit {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             setPadding(if (back) a.dp(4f) else a.dp(16f), a.dp(10f), a.dp(16f), a.dp(6f))
         }
+        if (!back) head.addView(TextView(a).apply {
+            text = "☰"; textSize = 24f; setTextColor(SuitePanels.TEXT)
+            gravity = Gravity.CENTER; contentDescription = "打开导航"
+            setOnClickListener { SuiteDrawer.show(a) }
+        }, LinearLayout.LayoutParams(a.dp(48f), a.dp(48f)))
         if (back) head.addView(TextView(a).apply {
             text = "‹"; textSize = 30f; setTextColor(SuitePanels.TEXT); setPadding(a.dp(12f), 0, a.dp(12f), a.dp(4f))
             setOnClickListener { a.finish() }

@@ -19,8 +19,8 @@
 
 ## 检查与验收
 
-当前环境没有 Flutter/Dart SDK。官方 SDK 清单请求返回 HTTP 404；未运行 Flutter analyze、widget test 或完整 APK 编译，未真机验证。
-源码使用 Dart Tree-sitter 解析器检查语法，并检查补丁空白错误；语法解析不等同于 Dart 类型检查。
+首轮仅通过 Dart Tree-sitter 语法检查。随后已通过 GitHub 标签安装 Flutter 3.47.7，依赖解析和所修改文件的 Flutter analyze 通过，新增导航的 4 项 widget tests 通过。
+用户随后选择在本地构建，云端完整打包已停止；未生成本轮 APK、未真机验证。最新导航和构建方式见 [统一侧栏与本地构建](统一侧栏与本地构建.md)。
 
 有工具链后：按仓库指定 Flutter 版本执行依赖解析、分析并编译。两台测试机重点检查：
 

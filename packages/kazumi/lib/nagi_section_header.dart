@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'nagi_theme.dart';
 
 /// Shared section navigation. The native suite owns the application bottom bar.
@@ -44,8 +45,34 @@ class NagiSectionHeader extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
               child: Row(
                 children: [
+                  IconButton(
+                    tooltip: '打开导航',
+                    icon: const Icon(Icons.menu_rounded),
+                    onPressed: () async {
+                      try {
+                        await const MethodChannel(
+                          'nagisaland/navigation',
+                        ).invokeMethod<void>('openDrawer');
+                      } on PlatformException {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('导航暂时无法打开，请重试')),
+                          );
+                        }
+                      } on MissingPluginException {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('请在安卓版 Nagisaland 中打开导航'),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  ),
                   Expanded(
-                    child: Text(title,
+                    child: Text(
+                      title,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -64,11 +91,16 @@ class NagiSectionHeader extends StatelessWidget {
                       onSelected: (index) => actions[index].onPressed(),
                       itemBuilder: (_) => [
                         for (var i = 1; i < actions.length; i++)
-                          PopupMenuItem(value: i, child: Row(children: [
-                            Icon(actions[i].icon, size: 20),
-                            const SizedBox(width: 12),
-                            Text(actions[i].label),
-                          ])),
+                          PopupMenuItem(
+                            value: i,
+                            child: Row(
+                              children: [
+                                Icon(actions[i].icon, size: 20),
+                                const SizedBox(width: 12),
+                                Text(actions[i].label),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                 ],
@@ -77,27 +109,35 @@ class NagiSectionHeader extends StatelessWidget {
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Row(children: [
-                for (var i = 0; i < destinations.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Semantics(
-                      selected: selectedIndex == i,
-                      button: true,
-                      child: TextButton.icon(
-                        onPressed: () => onSelected(i),
-                        icon: Icon(destinations[i].icon, size: 18),
-                        label: Text(destinations[i].label),
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(48, 48),
-                          foregroundColor: selectedIndex == i ? NagiColors.pink : NagiColors.sub,
-                          backgroundColor: selectedIndex == i ? const Color(0xFF332333) : Colors.transparent,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                children: [
+                  for (var i = 0; i < destinations.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Semantics(
+                        selected: selectedIndex == i,
+                        button: true,
+                        child: TextButton.icon(
+                          onPressed: () => onSelected(i),
+                          icon: Icon(destinations[i].icon, size: 18),
+                          label: Text(destinations[i].label),
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                            foregroundColor: selectedIndex == i
+                                ? NagiColors.pink
+                                : NagiColors.sub,
+                            backgroundColor: selectedIndex == i
+                                ? const Color(0xFF332333)
+                                : Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ]),
+                ],
+              ),
             ),
             const Divider(height: 1),
           ],
