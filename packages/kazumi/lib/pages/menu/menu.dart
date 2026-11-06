@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/nagi_theme.dart';
+import 'package:kazumi/nagi_section_header.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:flutter/services.dart';
 import 'package:kazumi/bean/widget/embedded_native_control_area.dart';
@@ -97,6 +99,28 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
         },
         child: OrientationBuilder(
           builder: (context, orientation) {
+            if (nagiUsesSectionShell) {
+              return Scaffold(body: Column(children: [
+                NagiSectionHeader(
+                  title: '番剧',
+                  destinations: const [
+                    NagiSectionDestination('推荐', Icons.home_outlined),
+                    NagiSectionDestination('时间表', Icons.timeline_outlined),
+                    NagiSectionDestination('追番', Icons.favorite_border),
+                    NagiSectionDestination('我的', Icons.person_outline),
+                  ],
+                  selectedIndex: _selectedIndex,
+                  onSelected: _selectDestination,
+                  actions: [
+                    NagiSectionAction('搜索番剧', Icons.search, () => context.pushNamed('/search/')),
+                    NagiSectionAction('番剧设置', Icons.settings_outlined, () => context.pushNamed('/settings/')),
+                  ],
+                ),
+                Expanded(child: MediaQuery.removePadding(
+                  context: context, removeTop: true, child: _outlet(context),
+                )),
+              ]));
+            }
             return orientation == Orientation.portrait
                 ? _bottomMenu(context, _selectedIndex)
                 : _sideMenu(context, _selectedIndex);

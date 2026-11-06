@@ -2,8 +2,13 @@
 // 放在 kazumi 包里是因为主工程已经依赖它（import 'package:kazumi/nagi_theme.dart'）。
 // 不想要统一主题时把 kNagiUnifiedTheme 改成 false，两边都回到各自原来的主题设置。
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 const bool kNagiUnifiedTheme = true;
+
+// Only the Android suite has a native application-level navigation bar.
+bool get nagiUsesSectionShell => kNagiUnifiedTheme && !kIsWeb &&
+    defaultTargetPlatform == TargetPlatform.android;
 
 class NagiColors {
   static const bg = Color(0xFF0F0F12);
@@ -73,7 +78,44 @@ class NagiTheme {
       canvasColor: NagiColors.bg,
       cardColor: NagiColors.card,
       dividerColor: NagiColors.line,
-      dialogTheme: const DialogThemeData(backgroundColor: NagiColors.panel),
+      dividerTheme: const DividerThemeData(color: NagiColors.line, thickness: 1),
+      cardTheme: CardThemeData(
+        color: NagiColors.card,
+        elevation: 0,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: NagiColors.panel,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: NagiColors.card,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: NagiColors.line),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: NagiColors.pink, width: 1.5),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
+        minimumSize: const Size(48, 48),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      )),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(
+        minimumSize: const Size(48, 48),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      )),
+      snackBarTheme: const SnackBarThemeData(
+        backgroundColor: NagiColors.cardHigh,
+        contentTextStyle: TextStyle(color: NagiColors.text),
+        behavior: SnackBarBehavior.floating,
+      ),
       bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: NagiColors.panel,
         modalBackgroundColor: NagiColors.panel,

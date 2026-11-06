@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/nagi_theme.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/pages/categories_page.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
@@ -59,6 +60,7 @@ class _MainPageState extends State<MainPage> {
   @override
   Widget build(BuildContext context) {
     return NaviPane(
+      sectionTitle: '漫画',
       initialPage: index,
       observer: _observer,
       navigatorKey: _navigatorKey!,
@@ -90,7 +92,7 @@ class _MainPageState extends State<MainPage> {
         });
       },
       paneActions: [
-        if (index != 0)
+        if (index != 0 || nagiUsesSectionShell)
           PaneActionEntry(
             icon: Icons.search,
             label: "Search".tl,

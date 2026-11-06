@@ -34,6 +34,7 @@ class NaviPane extends StatefulWidget {
     required this.paneActions,
     required this.pageBuilder,
     this.initialPage = 0,
+    this.sectionTitle,
     this.onPageChanged,
     required this.observer,
     required this.navigatorKey,
@@ -49,6 +50,7 @@ class NaviPane extends StatefulWidget {
   final void Function(int index)? onPageChanged;
 
   final int initialPage;
+  final String? sectionTitle;
 
   final NaviObserver observer;
 
@@ -175,6 +177,19 @@ class NaviPaneState extends State<NaviPane>
   @override
   Widget build(BuildContext context) {
     onRebuild(context);
+    if (nagiUsesSectionShell && widget.sectionTitle != null) {
+      return _NaviPopScope(
+        action: () {
+          final navigator = widget.navigatorKey.currentState;
+          if (navigator?.canPop() ?? false) {
+            navigator!.maybePop();
+          } else {
+            SystemNavigator.pop();
+          }
+        },
+        child: buildMainView(),
+      );
+    }
     // Aspect-scoped reads: the shell must not rebuild on every keyboard
     // inset frame (#107), so avoid a full MediaQuery.of subscription here.
     final sideInsets =
@@ -755,6 +770,24 @@ class _NaviMainViewState extends State<_NaviMainView> {
 
   @override
   Widget build(BuildContext context) {
+    if (nagiUsesSectionShell && state.widget.sectionTitle != null) {
+      return Column(children: [
+        NagiSectionHeader(
+          title: state.widget.sectionTitle!,
+          destinations: [for (final item in state.widget.paneItems)
+            NagiSectionDestination(item.label, item.icon)],
+          selectedIndex: state.currentPage,
+          onSelected: state.updatePage,
+          actions: [for (final action in state.widget.paneActions)
+            NagiSectionAction(action.label, action.icon, action.onTap)],
+        ),
+        Expanded(child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          child: SizedBox.expand(child: state.buildMainViewContent()),
+        )),
+      ]);
+    }
     var shouldShowAppBar = state.controller.value < 2;
     return Column(
       children: [
