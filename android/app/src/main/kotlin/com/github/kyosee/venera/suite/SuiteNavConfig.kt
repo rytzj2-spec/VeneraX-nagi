@@ -10,14 +10,14 @@ import java.lang.ref.WeakReference
 /**
  * 底栏配置（主界面网页底栏、原生 SuiteNavBar、横屏竖排导航栏三处共用，改了马上生效）。
  *
- * - [order]：全部 8 个分区的顺序（用户拖动排序）
+ * - [order]：全部分区的顺序（用户拖动排序）
  * - [inBar]：放在底栏的分区（3~6 个），其余放进「更多」；「更多」固定在最后
  */
 object SuiteNavConfig {
-    val ALL = listOf("lib", "site", "comic", "anime", "video", "h", "extract", "emu")
+    val ALL = listOf("lib", "site", "comic", "anime", "video", "h", "extract", "emu", "companion")
     val LABELS = mapOf(
         "lib" to "游戏库", "site" to "小站", "comic" to "漫画", "anime" to "番剧",
-        "video" to "影视", "h" to "H", "extract" to "解压", "emu" to "模拟器", "more" to "更多",
+        "companion" to "陪伴", "video" to "影视", "h" to "H", "extract" to "解压", "emu" to "模拟器", "more" to "更多",
     )
     const val MIN_BAR = 3
     const val MAX_BAR = 6

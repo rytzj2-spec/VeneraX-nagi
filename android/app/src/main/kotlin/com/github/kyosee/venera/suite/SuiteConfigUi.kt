@@ -34,7 +34,7 @@ object SuiteConfigUi {
     private val main = Handler(Looper.getMainLooper())
     private fun Context.dp(v: Float) = (v * resources.displayMetrics.density).toInt()
 
-    private val SECTION_ORDER = listOf("comic", "anime", "video", "h")
+    private val SECTION_ORDER = listOf("comic", "anime", "video", "h", "companion")
 
     fun showMenu(a: Activity) {
         val root = SuitePanels.sheet(a)

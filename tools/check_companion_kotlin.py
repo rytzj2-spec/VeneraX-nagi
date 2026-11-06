@@ -50,8 +50,9 @@ def main():
     panels = (src / "suite/SuitePanels.kt").read_text()
     colors = [re.search(r"internal const val " + key + r" = [^\n]+", panels).group() for key in ("BG", "CARD", "TEXT", "SUB", "PINK")]
     (cache / "SuitePanels.kt").write_text("package io.github.kyosee.venera.suite\nobject SuitePanels {\n" + "\n".join(colors) + "\n}")
+    (cache / "SuiteNavAdapter.kt").write_text("package io.github.kyosee.venera.suite\nobject SuiteNav { fun attach(a: android.app.Activity, key: String) {} ; fun interceptFinish(a: android.app.Activity): Boolean = false }")
     cp = os.pathsep.join(str(path) for path in cache.glob("*.jar"))
-    sources = list((src / "companion").glob("*.kt")) + [cache / "PageKit.kt", cache / "SuitePanels.kt"]
+    sources = list((src / "companion").glob("*.kt")) + [cache / "PageKit.kt", cache / "SuitePanels.kt", cache / "SuiteNavAdapter.kt"]
     result = subprocess.run(["java", "-cp", cp, "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler", "-no-stdlib", "-no-reflect",
                              "-jvm-target", "17", "-classpath", cp, "-d", str(cache / "classes")] + [str(p) for p in sources],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)

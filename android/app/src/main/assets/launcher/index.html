@@ -249,6 +249,7 @@ ol.steps { padding-left: 20px; margin: 8px 0; color: var(--sub); font-size: 13px
 <nav class="nav" id="nav" hidden>
   <button data-tab="lib" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>游戏库</button>
   <button data-tab="site"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M3 9h18"/><path d="M9 20v-6h6v6"/></svg>小站</button>
+  <button data-companion hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 21L3 12C-2 5 7 0 12 7C17 0 26 5 21 12Z"/></svg><span>陪伴</span></button>
   <button data-comic hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 5.5C4.5 4 8 4 12 6c4-2 7.5-2 10-.5V19c-2.5-1.5-6-1.5-10 .5-4-2-7.5-2-10-.5z"/><path d="M12 6v13.5"/></svg>漫画</button>
   <button data-anime hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="14" rx="2.5"/><path d="M8 2l4 4 4-4"/><path d="M10 10.5v5l4.5-2.5z"/></svg>番剧</button>
   <button data-video hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5"/></svg>影视</button>
@@ -312,7 +313,7 @@ const App = (() => {
   $('#btnPerm').onclick = () => N.requestStorage();
   $('#mask').onclick = closeSheet;
   // 底栏：放哪些、什么顺序由原生的 SuiteNavConfig 决定（和各分区的原生底栏、横屏竖排栏共用一份），其余进「更多」
-  const navKey = b => b.dataset.tab || ['comic', 'anime', 'video', 'h', 'more'].find(k => b.hasAttribute('data-' + k)) || '';
+  const navKey = b => b.dataset.tab || ['comic', 'anime', 'video', 'h', 'companion', 'more'].find(k => b.hasAttribute('data-' + k)) || '';
   function markMore() {
     const m = $('#nav button[data-more]'); if (!m) return;
     const on = [...document.querySelectorAll('#nav button[data-tab]')].find(b => b.classList.contains('on'));
@@ -355,6 +356,11 @@ const App = (() => {
   $('#nav').onclick = e => {
     if (swiped) { swiped = false; return; }   // 刚才是左滑，不算点击
     if (e.target.closest('button[data-more]')) { if (N.openMore) N.openMore(cur || 'lib'); return; }
+    if (e.target.closest('button[data-companion]')) {
+      const err = N.launchIntent(JSON.stringify({pkg: 'com.nagisaland.mobile', cls: 'io.github.kyosee.venera.suite.SuiteSwitchActivity', extras: {to: 'companion'}}));
+      if (err) alert(err);
+      return;
+    }
     if (e.target.closest('button[data-comic]')) { openComic(); return; }
     if (e.target.closest('button[data-anime]')) { openAnime(); return; }
     if (e.target.closest('button[data-video]')) { openVideo(); return; }

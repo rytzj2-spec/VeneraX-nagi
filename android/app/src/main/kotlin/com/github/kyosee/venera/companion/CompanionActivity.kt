@@ -13,6 +13,7 @@ import android.text.InputType
 import android.view.ViewGroup
 import android.widget.*
 import io.github.kyosee.venera.suite.PageKit
+import io.github.kyosee.venera.suite.SuiteNav
 import org.json.JSONArray
 import org.json.JSONObject
 import org.osmdroid.config.Configuration
@@ -82,10 +83,19 @@ class CompanionActivity : Activity() {
         CompanionStore.update(this) { if (it.optLong("generation") == generation) { it.put("state", state); it.put("consent", permissions) } }
         if (!state.has("peer")) queue?.clear()
     })
+    fun openCompanionSettings() { tab = 3; render() }
+
+    @Deprecated("Legacy Android back callback")
+    override fun onBackPressed() {
+        if (tab != 0) { tab = 0; render() }
+        else if (!SuiteNav.interceptFinish(this)) super.onBackPressed()
+    }
+
     private fun render() {
         map?.onDetach(); map = null
-        val (_, content) = PageKit.page(this, "陪伴", true)
+        val (_, content) = PageKit.page(this, "陪伴", false)
         col = content
+        SuiteNav.attach(this, "companion")
         val config = CompanionStore.read(this)
         if (config.optString("token").isEmpty()) { registration(); return }
         col.addView(PageKit.choices(this, listOf("彼此", "足迹", "消息", "设置"), tab) { tab = it; render() })

@@ -28,6 +28,7 @@ import io.flutter.plugin.common.MethodChannel
 import io.github.kyosee.venera.MainActivity
 import io.github.kyosee.venera.kazumi.KazumiActivity
 import io.github.kyosee.venera.kazumi.KazumiEngine
+import io.github.kyosee.venera.companion.CompanionActivity
 import io.github.kyosee.venera.video.VideoActivity
 import java.lang.ref.WeakReference
 import kotlin.math.roundToInt
@@ -71,6 +72,7 @@ object SuiteNav {
         MainActivity::class.java -> "comic"
         KazumiActivity::class.java -> "anime"
         VideoActivity::class.java -> "video"
+        CompanionActivity::class.java -> "companion"
         hClass -> "h"
         SuiteSwitchActivity::class.java -> "nagi"
         SuiteMoreActivity::class.java -> "more"
@@ -100,6 +102,7 @@ object SuiteNav {
             "comic" -> MainActivity::class.java
             "anime" -> KazumiActivity::class.java
             "video" -> VideoActivity::class.java
+            "companion" -> CompanionActivity::class.java
             "h" -> hClass ?: return
             in NAGI_TABS -> { pendingTab = to; nagiClass!! }
             else -> return
@@ -240,6 +243,7 @@ object SuiteNav {
                             override fun notImplemented() { fail("这个分区还不支持") }
                         })
                 }
+                "companion" -> (a as? CompanionActivity)?.openCompanionSettings()
                 "h" -> a.startActivity(Intent(a, Class.forName(H_SETTINGS)))
                 else -> {
                     val wv = findWebView(a.window.decorView) ?: return SuitePanels.showSettings(a)
@@ -338,6 +342,7 @@ object SuiteNavItems {
         "h" -> p("M12 20.5s-7.5-4.6-9.3-9.2C1.4 8 3.6 4.5 7 4.5c2.1 0 3.6 1.2 5 3 1.4-1.8 2.9-3 5-3 3.4 0 5.6 3.5 4.3 6.8-1.8 4.6-9.3 9.2-9.3 9.2z")
         "extract" -> p("M21 8v13H3V8", "M1 3h22v5H1z", "M10 12h4")
         "emu" -> listOf(rr(2f, 7f, 22f, 19f, 4f)) + p("M7 11v4M5 13h4") + listOf(c(16f, 12f, 1f), c(18f, 14f, 1f))
+        "companion" -> p("M12 21L3 12C-2 5 7 0 12 7C17 0 26 5 21 12Z")
         "more" -> listOf(c(5f, 12f, 1.6f), c(12f, 12f, 1.6f), c(19f, 12f, 1.6f))
         else -> emptyList()
     }

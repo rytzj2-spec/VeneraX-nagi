@@ -152,9 +152,6 @@ class SuiteMoreActivity : Activity() {
             val a = this@SuiteMoreActivity
             section(a, col, "功能")
             togetherSub = rowCard(a, col, "一起看", "") { startActivity(Intent(a, SuiteTogetherActivity::class.java)) }
-            rowCard(a, col, "陪伴", "双方授权 · 位置、足迹、手机状态与消息") {
-                startActivity(Intent(a, io.github.kyosee.venera.companion.CompanionActivity::class.java))
-            }
             configSub = rowCard(a, col, "一键配置", "") { SuiteConfigUi.showMenu(a) }
 
             section(a, col, "其他分区")
