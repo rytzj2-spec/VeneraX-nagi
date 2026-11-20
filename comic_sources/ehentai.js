@@ -7,12 +7,12 @@ class Ehentai extends ComicSource {
     // unique id of the source
     key = "ehentai"
 
-    version = "1.1.8"
+    version = "1.2.2"
 
     minAppVersion = "1.5.3"
 
     // update url
-    url = "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/ehentai.js"
+    url = "https://cdn.jsdelivr.net/gh/rytzj2-spec/VeneraX-nagi@unify-app/comic_sources/ehentai.js"
 
     /**
      * cached api key
@@ -110,43 +110,46 @@ class Ehentai extends ComicSource {
              * @returns {Promise<boolean>}
              */
             validate: async (values) => {
-                if (values.length !== 4) {
-                    return false
+                const fields = this.account.loginWithCookies.fields;
+                const [memberId, passHash] = values.map((value) => value.trim());
+                if (values.length !== fields.length || !memberId || !passHash) {
+                    return false;
                 }
-                if (values[0].length === 0 || values[1].length === 0) {
-                    return false
+
+                const site = "https://e-hentai.org";
+                const exSite = "https://exhentai.org";
+                const old = await Network.getCookies(site);
+                const credentials = [[fields[0], memberId], [fields[1], passHash]];
+                const makeCookies = (entries, domain) =>
+                    entries.map(([name, value]) => new Cookie({ name, value, domain }));
+
+                let accepted = false;
+                try {
+                    Network.setCookies(site, makeCookies(credentials, ".e-hentai.org"));
+                    const res = await Network.get(site + "/home.php", { "cache-time": "no" });
+                    // The forum can return a browser challenge. Only the main site's
+                    // authenticated account overview can confirm these credentials.
+                    accepted = res.status === 200 && typeof res.body === "string"
+                        && /\bImage Limits\b/i.test(res.body)
+                        && !/requires you to log on|name=["']UserName["']/i.test(res.body);
+                    if (!accepted) return false;
+                } finally {
+                    if (!accepted) {
+                        const restore = credentials.map(([name]) => [name, old.find((cookie) => cookie.name === name)?.value ?? ""]);
+                        Network.setCookies(site, makeCookies(restore, ".e-hentai.org"));
+                    }
                 }
-                let cookies = []
-                for (let i = 0; i < values.length; i++) {
-                    cookies.push(new Cookie({
-                        name: this.account.loginWithCookies.fields[i],
-                        value: values[i],
-                        domain: ".e-hentai.org"
-                    }))
-                    cookies.push(new Cookie({
-                        name: this.account.loginWithCookies.fields[i],
-                        value: values[i],
-                        domain: ".exhentai.org"
-                    }))
-                }
-                Network.deleteCookies('https://e-hentai.org')
-                Network.setCookies('https://e-hentai.org', cookies)
-                let res = await Network.get(
-                    "https://forums.e-hentai.org/",
-                    {
-                        "referer": "https://forums.e-hentai.org/index.php?",
-                        "accept":
-                            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                        "accept-encoding": "gzip, deflate, br",
-                        "accept-language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7"
-                    });
-                if (res.status !== 200) {
-                    return false
-                }
-                let document = new HtmlDocument(res.body)
-                let name = document.querySelector("div#userlinks > p.home > b > a");
-                document.dispose()
-                return name != null
+
+                const exCookies = await Network.getCookies(exSite);
+                const previousMember = exCookies.find((cookie) => cookie.name === fields[0])?.value;
+                const accountChanged = previousMember && previousMember !== memberId;
+                const optional = fields.slice(2).map((name, index) => [name, values[index + 2].trim()]);
+                const exOptional = optional.filter(([name, value]) =>
+                    value || (accountChanged && exCookies.some((cookie) => cookie.name === name)));
+                Network.setCookies(exSite, makeCookies([...credentials, ...exOptional], ".exhentai.org"));
+                const star = optional.find(([name, value]) => name === "star" && value);
+                if (star) Network.setCookies(site, makeCookies([star], ".e-hentai.org"));
+                return true;
             }
         },
 
@@ -205,13 +208,6 @@ class Ehentai extends ComicSource {
     }
 
     async onLoadFailed() {
-        let cookies = await Network.getCookies('https://e-hentai.org')
-        cookies.forEach((c) => {
-            c.domain = '.exhentai.org'
-        })
-        cookies.filter((item) => item.name !== 'igneous')
-        Network.deleteCookies('https://exhentai.org')
-        Network.setCookies('https://exhentai.org', cookies)
         throw `You may not have permission to access this page. Please check your network or try to login again.`
     }
 
