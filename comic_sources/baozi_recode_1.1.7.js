@@ -6,7 +6,7 @@ class BaoziRecode extends ComicSource {
   // 唯一标识符
   key = "baozi_recode";
 
-  version = "1.1.7";
+  version = "1.1.8";
 
   minAppVersion = "1.0.0";
 
@@ -28,25 +28,22 @@ class BaoziRecode extends ComicSource {
       title: "主域名",
       type: "select",
       options: [
-        { value: "bzmgcn.com" },
-        { value: "baozimhcn.com" },
         { value: "webmota.com" },
         { value: "kukuc.co" },
         { value: "twmanga.com" },
         { value: "dinnerku.com" },
       ],
-      default: "bzmgcn.com",
+      default: "webmota.com",
     },
     cdn_domains: {
-      title: "图片资源站域名",
+      title: "图片线路",
       type: "select",
       options: [
-        { value: "as.baozimh.com", text: "as.baozimh.com" },
-        { value: "as2.baozimh.com", text: "as2.baozimh.com" },
-        { value: "static-tw.bzmgcn.com", text: "static-tw.bzmgcn.com（仅原图）" },
-        { value: "static-tw.baozimh.com", text: "static-tw.baozimh.com（仅原图）" },
+        { value: "", text: "跟随站点" },
+        { value: "s1.bzcdn.net" },
+        { value: "s2.bzcdn.net" },
       ],
-      default: "as.baozimh.com",
+      default: "",
     },
     image_quality: {
       title: "图片质量",
@@ -65,35 +62,16 @@ class BaoziRecode extends ComicSource {
     },
   };
 
-  /// 图片默认主机。原默认“跟随站点”指向的 s1.baozicdn.com 已下线。
-  static defaultImageHost = "as.baozimh.com";
-
-  /// 已实测停止服务的图片主机：443 端口 Connection refused（2026-09-02）。
-  /// 老版本用户若保存过这些值，必须回退到可用主机，否则图片永远加载不出来。
-  static deadImageHosts = [
-    "s1.baozicdn.com",
-    "s.baozicdn.com",
-    "as-rsa1-usla.baozicdn.com",
-    "ascn-a3.bzcdn.net",
-    "asgb-a3.bzcdn.net",
-  ];
-
-  // 动态生成完整域名
+  // 已失效的历史默认值回退到当前主站，保留其他已选线路。
   get lang() {
     return this.loadSetting("language") || this.settings.language.default;
   }
-  get baseUrl() {
-    let domain = this.loadSetting("domains") || this.settings.domains.default;
-    return `https://${this.lang}.${domain}`;
-  }
 
-  /// 实际生效的图片主机（对历史失效设置做兜底）
-  get imageHost() {
-    let host = this.loadSetting("cdn_domains") || "";
-    if (!host || BaoziRecode.deadImageHosts.indexOf(host) >= 0) {
-      host = BaoziRecode.defaultImageHost;
-    }
-    return host;
+  get baseUrl() {
+    const selected = this.loadSetting("domains");
+    const domain = this.settings.domains.options.some((entry) => entry.value === selected)
+      ? selected : this.settings.domains.default;
+    return `https://${this.lang}.${domain}`;
   }
 
   /// 封面主机。static-tw.baozimh.com 在部分地区（如大陆）会返回 403，
@@ -130,6 +108,7 @@ class BaoziRecode extends ComicSource {
   _absoluteUrl(url) {
     if (!url) return "";
     if (/^https?:\/\//i.test(url)) return url;
+    if (url.startsWith("//")) return "https:" + url;
     if (url.charAt(0) === "/") return this.baseUrl + url;
     return this.baseUrl + "/" + url;
   }
@@ -581,38 +560,23 @@ class BaoziRecode extends ComicSource {
       });
     },
     loadEp: async (comicId, epId) => {
-      const images = [];
-
-      // App版链接
-      let currentPageUrl = `https://appcn.baozimh.com/baozimhapp/comic/chapter/${comicId}/0_${epId}.html`;
-
-      const res = await Network.get(currentPageUrl);
-      if (res.status !== 200) {
-        throw `Invalid status code: ${res.status}`;
-      }
-
+      const url = `${this.baseUrl}/comic/chapter/${encodeURIComponent(comicId)}/0_${encodeURIComponent(epId)}.html`;
+      const res = await this._getFollowingRedirect(url);
+      if (res.status !== 200) throw `章节加载失败（HTTP ${res.status}）`;
       const doc = new HtmlDocument(res.body);
-
-      const host = this.imageHost;
-      const quality = this.loadSetting("image_quality") || "";
-
-      // 解析当前页图片(App 版)
-      const imageNodes = doc.querySelectorAll(".comic-contain > .chapter-img");
-      imageNodes.forEach((imgNode) => {
-        let imgUrl = imgNode.querySelector(".comic-contain__item")?.attributes?.["data-src"];
-        if (imgUrl) {
-          // 站点 data-src 指向的 s1.baozicdn.com 已下线，必须换成可用主机。
-          // 这里不再依赖 /[a-z]comic/ 前缀，避免路径形态变化导致整章图片丢失。
-          const match = imgUrl.match(/^(https?:\/\/)?([^/\s:]+)(:\d+)?(\/.*)$/);
-          if (match) {
-            const scheme = match[1] || "https://";
-            const port = match[3] || "";
-            imgUrl = `${scheme}${host}${port}${quality}${match[4]}`;
-          }
-          images.push(imgUrl);
-        }
-      });
-      return { images: images };
+      const selected = this.loadSetting("cdn_domains");
+      const quality = this.loadSetting("image_quality") === "/w640" ? "/w640" : "";
+      const images = [];
+      for (const image of doc.querySelectorAll(".comic-contain .comic-contain__item")) {
+        const value = image.attributes["data-src"] || image.attributes["src"];
+        const match = value?.match(/^(?:https:)?\/\/([^/]+)(\/(?:w640\/)?[a-z]comic\/[^\s]+)$/i);
+        if (!match) continue;
+        const host = selected === "s1.bzcdn.net" || selected === "s2.bzcdn.net" ? selected : match[1];
+        const path = match[2].replace(/^\/w640(?=\/)/, "");
+        images.push(`https://${host}${quality}${path}`);
+      }
+      if (!images.length) throw "来源没有返回可读图片，请检查该章节是否公开或切换来源线路";
+      return { images: [...new Set(images)] };
     },
   };
 
@@ -620,7 +584,7 @@ class BaoziRecode extends ComicSource {
   onImageLoad(url, comicId, epId) {
     return {
       headers: {
-        Referer: "https://appcn.baozimh.com/",
+        Referer: this.baseUrl + "/",
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
       },

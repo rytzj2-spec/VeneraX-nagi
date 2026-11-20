@@ -1,3 +1,4 @@
+
 class Baozi extends ComicSource {
   // 此漫画源的名称
   name = "包子漫画";
@@ -5,12 +6,12 @@ class Baozi extends ComicSource {
   // 唯一标识符
   key = "baozi";
 
-  version = "1.1.6";
+  version = "1.1.8";
 
   minAppVersion = "1.0.0";
 
   // 更新链接
-  url = "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/baozi.js";
+  url = "https://cdn.jsdelivr.net/gh/rytzj2-spec/VeneraX-nagi@unify-app/comic_sources/baozi.js";
 
   settings = {
     language: {
@@ -26,25 +27,20 @@ class Baozi extends ComicSource {
       title: "主域名",
       type: "select",
       options: [
-        { value: "bzmgcn.com" },
-        { value: "baozimhcn.com" },
         { value: "webmota.com" },
         { value: "kukuc.co" },
         { value: "twmanga.com" },
         { value: "dinnerku.com" },
       ],
-      default: "bzmgcn.com",
+      default: "webmota.com",
     },
     cdn_domains: {
-      title: "图片资源站域名",
+      title: "图片线路",
       type: "select",
       options: [
-        { value: "as-rsa1-usla.baozicdn.com" },
-        { value: "ascn-a3.bzcdn.net" },
-        { value: "asgb-a3.bzcdn.net" },
-        { value: "as.baozimh.com" },
-        { value: "s1.baozicdn.com" },
-        { value: "", text: "默认" },
+        { value: "", text: "跟随站点" },
+        { value: "s1.bzcdn.net" },
+        { value: "s2.bzcdn.net" },
       ],
       default: "",
     },
@@ -65,13 +61,76 @@ class Baozi extends ComicSource {
     },
   };
 
-  // 动态生成完整域名
+  // 已失效的历史默认值回退到当前主站，保留其他已选线路。
   get lang() {
     return this.loadSetting("language") || this.settings.language.default;
   }
+
   get baseUrl() {
-    let domain = this.loadSetting("domains") || this.settings.domains.default;
+    const selected = this.loadSetting("domains");
+    const domain = this.settings.domains.options.some((entry) => entry.value === selected)
+      ? selected : this.settings.domains.default;
     return `https://${this.lang}.${domain}`;
+  }
+
+  /// 封面主机。static-tw.baozimh.com 在部分地区（如大陆）会返回 403，
+  /// 因此默认改用与主站同域的 static-tw.bzmgcn.com；切换主域名时跟随。
+  get coverHost() {
+    let domain = this.loadSetting("domains") || this.settings.domains.default;
+    const staticDomains = ["bzmgcn.com", "baozimhcn.com"];
+    if (staticDomains.indexOf(domain) >= 0) {
+      return `static-tw.${domain}`;
+    }
+    return "static-tw.bzmgcn.com";
+  }
+
+  /// 把站点返回的各类 static-tw 封面 URL 统一归到当前 coverHost，
+  /// 避免 static-tw.baozimh.com 等主机在部分网络下 403。
+  _normalizeCover(url) {
+    if (!url) return url;
+    return url.replace(/^https:\/\/static-tw\.[^/]+/, `https://${this.coverHost}`);
+  }
+
+  /// 响应头大小写不敏感取值（不同平台返回的头名大小写不一致）
+  _headerValue(headers, name) {
+    if (!headers) return "";
+    const target = String(name).toLowerCase();
+    for (const key in headers) {
+      if (String(key).toLowerCase() === target) {
+        const value = headers[key];
+        return Array.isArray(value) ? value[0] || "" : value || "";
+      }
+    }
+    return "";
+  }
+
+  _absoluteUrl(url) {
+    if (!url) return "";
+    if (/^https?:\/\//i.test(url)) return url;
+    if (url.startsWith("//")) return "https:" + url;
+    if (url.charAt(0) === "/") return this.baseUrl + url;
+    return this.baseUrl + "/" + url;
+  }
+
+  /**
+   * 发起 GET 并跟随 3xx 重定向。
+   * Venera 的 Network.get 不会自动跟随重定向，而站点对短 comic_id 一律 302
+   * 到带 _xxxxxx 后缀的规范 ID，不跟随就会拿到 302 空响应。
+   */
+  async _getFollowingRedirect(url, maxRedirects = 3) {
+    let current = url;
+    for (let i = 0; i < maxRedirects; i++) {
+      const res = await Network.get(current);
+      if (res.status >= 300 && res.status < 400) {
+        const location = this._headerValue(res.headers, "location");
+        if (!location) break;
+        current = this._absoluteUrl(location);
+        continue;
+      }
+      return res;
+    }
+    // 重定向链结束后仍未拿到 200，再请求一次拿到最终状态用于报错
+    return await Network.get(current);
   }
 
   /// 账号
@@ -124,7 +183,9 @@ class Baozi extends ComicSource {
     let url = e.querySelector("a").attributes["href"];
     let id = url.split("/").pop();
     let title = e.querySelector("h3").text.trim();
-    let cover = e.querySelector("a > amp-img").attributes["src"];
+    let cover = this._normalizeCover(
+      e.querySelector("a > amp-img").attributes["src"]
+    );
     let tags = e.querySelectorAll("div.tabs > span").map((e) => e.text.trim());
     let description = e.querySelector("small").text.trim();
     return {
@@ -141,7 +202,7 @@ class Baozi extends ComicSource {
       id: e.comic_id,
       title: e.name,
       subTitle: e.author,
-      cover: `https://static-tw.baozimh.com/cover/${e.topic_img}?w=285&h=375&q=100`,
+      cover: `https://${this.coverHost}/cover/${e.topic_img}?w=285&h=375&q=100`,
       tags: e.type_names,
     };
   }
@@ -158,7 +219,7 @@ class Baozi extends ComicSource {
       type: "singlePageWithMultiPart",
 
       load: async () => {
-        var res = await Network.get(this.baseUrl);
+        var res = await this._getFollowingRedirect(this.baseUrl);
         if (res.status !== 200) {
           throw "Invalid status code: " + res.status;
         }
@@ -266,7 +327,7 @@ class Baozi extends ComicSource {
   /// 分类漫画页面, 即点击分类标签后进入的页面
   categoryComics = {
     load: async (category, param, options, page) => {
-      let res = await Network.get(
+      let res = await this._getFollowingRedirect(
         `${this.baseUrl}/api/bzmhq/amp_comic_list?type=${param}&region=${options[0]}&state=${options[1]}&filter=%2a&page=${page}&limit=36&language=${this.lang}&__amp_source_origin=${this.baseUrl}`
       );
       if (res.status !== 200) {
@@ -296,7 +357,10 @@ class Baozi extends ComicSource {
   /// 搜索
   search = {
     load: async (keyword, options, page) => {
-      let res = await Network.get(`${this.baseUrl}/search?q=${keyword}`);
+      // 中文关键词必须做百分号编码，站点对未编码查询返回 400
+      let res = await this._getFollowingRedirect(
+        `${this.baseUrl}/search?q=${encodeURIComponent(keyword)}`
+      );
       if (res.status !== 200) {
         throw "Invalid status code: " + res.status;
       }
@@ -343,7 +407,9 @@ class Baozi extends ComicSource {
     loadFolders: null,
     /// 加载漫画
     loadComics: async (page, folder) => {
-      let res = await Network.get(`${this.baseUrl}/user/my_bookshelf`);
+      let res = await this._getFollowingRedirect(
+        `${this.baseUrl}/user/my_bookshelf`
+      );
       if (res.status !== 200) {
         throw "Invalid status code: " + res.status;
       }
@@ -365,7 +431,9 @@ class Baozi extends ComicSource {
           title: title,
           subTitle: author,
           description: description,
-          cover: e.querySelector("amp-img").attributes["src"],
+          cover: this._normalizeCover(
+            e.querySelector("amp-img").attributes["src"]
+          ),
         };
       }
       let comics = document
@@ -382,15 +450,19 @@ class Baozi extends ComicSource {
   comic = {
     // 加载漫画信息
     loadInfo: async (id) => {
-      let res = await Network.get(`${this.baseUrl}/comic/${id}`);
+      // 短 ID（分类/搜索接口返回）会被 302 到带 _xxxxxx 后缀的规范 ID，必须跟随
+      let res = await this._getFollowingRedirect(`${this.baseUrl}/comic/${id}`);
       if (res.status !== 200) {
         throw "Invalid status code: " + res.status;
       }
       let document = new HtmlDocument(res.body);
 
       let title = document.querySelector("h1.comics-detail__title").text.trim();
-      let cover = document.querySelector("div.l-content > div > div > amp-img")
-        .attributes["src"];
+      let cover = this._normalizeCover(
+        document.querySelector("div.l-content > div > div > amp-img").attributes[
+          "src"
+        ]
+      );
       let author = document
         .querySelector("h2.comics-detail__author")
         .text.trim();
@@ -455,7 +527,9 @@ class Baozi extends ComicSource {
       for (let c of document.querySelectorAll("div.recommend--item")) {
         if (c.querySelectorAll("div.tag-comic").length > 0) {
           let title = c.querySelector("span").text.trim();
-          let cover = c.querySelector("amp-img").attributes["src"];
+          let cover = this._normalizeCover(
+            c.querySelector("amp-img").attributes["src"]
+          );
           let url = c.querySelector("a").attributes["href"];
           let id = url.split("/").pop();
           recommend.push({
@@ -485,32 +559,45 @@ class Baozi extends ComicSource {
       });
     },
     loadEp: async (comicId, epId) => {
-      const images = [];
-
-      // App版链接
-      let currentPageUrl = `https://appcn.baozimh.com/baozimhapp/comic/chapter/${comicId}/0_${epId}.html`;
-
-      const res = await Network.get(currentPageUrl);
-      if (res.status !== 200) {
-        throw `Invalid status code: ${res.status}`;
-      }
-
+      const url = `${this.baseUrl}/comic/chapter/${encodeURIComponent(comicId)}/0_${encodeURIComponent(epId)}.html`;
+      const res = await this._getFollowingRedirect(url);
+      if (res.status !== 200) throw `章节加载失败（HTTP ${res.status}）`;
       const doc = new HtmlDocument(res.body);
-
-      // 解析当前页图片(App 版)
-      const imageNodes = doc.querySelectorAll(".comic-contain > .chapter-img");
-      imageNodes.forEach((imgNode) => {
-        let imgUrl = imgNode.querySelector(".comic-contain__item")?.attributes?.["data-src"];
-        if (imgUrl) {
-          const match = imgUrl.match(/^(https?:\/\/)?([^/\s:]+)(:\d+)?(\/[a-z]comic\/.*)/);
-          if (match) {
-            const domain = this.loadSetting("cdn_domains") === "" ? match[2] : this.loadSetting("cdn_domains");
-            imgUrl = `${match[1]}${domain}${this.loadSetting("image_quality")}${match[4]}`;
-          }
-          images.push(imgUrl);
-        }
-      });
-      return { images: images };
+      const selected = this.loadSetting("cdn_domains");
+      const quality = this.loadSetting("image_quality") === "/w640" ? "/w640" : "";
+      const images = [];
+      for (const image of doc.querySelectorAll(".comic-contain .comic-contain__item")) {
+        const value = image.attributes["data-src"] || image.attributes["src"];
+        const match = value?.match(/^(?:https:)?\/\/([^/]+)(\/(?:w640\/)?[a-z]comic\/[^\s]+)$/i);
+        if (!match) continue;
+        const host = selected === "s1.bzcdn.net" || selected === "s2.bzcdn.net" ? selected : match[1];
+        const path = match[2].replace(/^\/w640(?=\/)/, "");
+        images.push(`https://${host}${quality}${path}`);
+      }
+      if (!images.length) throw "来源没有返回可读图片，请检查该章节是否公开或切换来源线路";
+      return { images: [...new Set(images)] };
     },
   };
+
+  /// 图片请求头：CDN 可能校验防盗链，统一带上来源
+  onImageLoad(url, comicId, epId) {
+    return {
+      headers: {
+        Referer: this.baseUrl + "/",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      },
+    };
+  }
+
+  /// 封面（static-tw 域）同样带 Referer，避免防盗链拦截
+  onThumbnailLoad(url) {
+    return {
+      headers: {
+        Referer: this.baseUrl + "/",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      },
+    };
+  }
 }
